@@ -2,6 +2,7 @@ using System.Diagnostics;
 using blackjack.Domain;
 using blackjack.Engine;
 using blackjack.Engine.SideBets;
+using blackjack.Strategies;
 using Spectre.Console;
 using Spectre.Console.Rendering;
 
@@ -49,7 +50,7 @@ namespace blackjack.Cli
             this.console = console;
             this.keys = keys;
             this.fastForward = fastForward;
-            seatRows = new Func<Player, string>[] { SeatName, SeatCards, SeatStatus };
+            seatRows = new Func<Player, string>[] { SeatName, SeatTag, SeatCards, SeatStatus };
         }
 
         public int Round { get; set; }
@@ -247,7 +248,7 @@ namespace blackjack.Cli
             var root = new Layout("table").SplitRows(
                 new Layout("header", Header(width)).Size(TableLayout.HeaderRows),
                 new Layout("dealer", Dealer(layout.TileHeight)).Size(layout.DealerRows),
-                new Layout("seats", Seats(layout.TwoSeatRows)).Size(layout.SeatRows * seatRows.Length),
+                new Layout("seats", Seats(layout)).Size(layout.SeatRows * layout.SeatLines),
                 new Layout("you").Size(layout.YouRows),
                 new Layout("events", Events(layout.EventRows)).Size(layout.EventRows),
                 new Layout("bar", Bar()).Size(TableLayout.BarRows));
@@ -350,19 +351,19 @@ namespace blackjack.Cli
         // The seats in the order they act, with a marker where you sit: one grid, or two when the
         // terminal is narrow, with the first half of the seats above the rest. Each grid row comes
         // from one of seatRows, so a row can be added under the names without touching the rest.
-        private IRenderable Seats(bool twoRows)
+        private IRenderable Seats(TableLayout layout)
         {
             var seats = game.Players;
-            if (!twoRows)
+            if (!layout.TwoSeatRows)
             {
-                return SeatGrid(seats);
+                return SeatGrid(seats, layout);
             }
 
             var half = (seats.Count + 1) / 2;
-            return new Rows(SeatGrid(seats.Take(half).ToList()), SeatGrid(seats.Skip(half).ToList()));
+            return new Rows(SeatGrid(seats.Take(half).ToList(), layout), SeatGrid(seats.Skip(half).ToList(), layout));
         }
 
-        private IRenderable SeatGrid(IReadOnlyList<Player> seats)
+        private IRenderable SeatGrid(IReadOnlyList<Player> seats, TableLayout layout)
         {
             var width = Math.Max(8, console.Profile.Width / seats.Count - 2);
             var grid = new Grid();
@@ -371,7 +372,7 @@ namespace blackjack.Cli
                 grid.AddColumn(new GridColumn().Width(width).NoWrap().PadRight(2));
             }
 
-            foreach (var row in seatRows)
+            foreach (var row in SeatRowsFor(layout))
             {
                 grid.AddRow(seats.Select(seat => new Line(row(seat))).ToArray());
             }
@@ -395,6 +396,14 @@ namespace blackjack.Cli
             var done = seat.Hands.Count > 0 && seat.Hands.All(h => h.Outcome is not null || h.IsStood);
             return done ? $"[grey]{Name(seat)}[/]" : $"[bold]{Name(seat)}[/]";
         }
+
+        // A bot's type under its name; nothing under yours.
+        private string SeatTag(Player seat) =>
+            seat != human && Bots.TypeOf(seat.Strategy) is { } type ? $"[grey]{Bots.Tag(type)}[/]" : "";
+
+        // The tag row is the one the layout drops when the terminal has no row for it.
+        private IEnumerable<Func<Player, string>> SeatRowsFor(TableLayout layout) =>
+            layout.SeatLines == seatRows.Length ? seatRows : seatRows.Where(row => row != SeatTag);
 
         // Split hands sit side by side: 8♠ 3♦ | 8♥ 10♣.
         private string SeatCards(Player seat)

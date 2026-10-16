@@ -1,5 +1,6 @@
 using blackjack.Engine;
 using blackjack.Engine.SideBets;
+using blackjack.Strategies;
 using Spectre.Console;
 
 namespace blackjack.Cli
@@ -36,6 +37,8 @@ namespace blackjack.Cli
                     .DefaultValue(2)
                     .Validate(n => n is >= 0 and < Game.MaxPlayers, $"[red]Pick 0 to {Game.MaxPlayers - 1} bots.[/]"));
 
+            var botTypes = bots > 0 ? AskBotTypes(console, bots, seed) : new List<BotType>();
+
             var sideBets = new List<ISideBet> { SideBets.All[0], SideBets.All[1] };
             if (console.Confirm($"Change the side bets? [grey]({sideBets[0].Name} and {sideBets[1].Name})[/]", defaultValue: false))
             {
@@ -57,7 +60,50 @@ namespace blackjack.Cli
                 }
             }
 
-            return new TableSettings(name, chips, bots, rules, sideBets, seed);
+            return new TableSettings(name, chips, botTypes, rules, sideBets, seed);
+        }
+
+        // One type for every bot, "random" for a mix drawn from the seed, or a comma-separated list
+        // with one entry per bot in seat order; "random" works inside a list too.
+        private static List<BotType> AskBotTypes(IAnsiConsole console, int bots, int seed)
+        {
+            var names = string.Join(", ", Bots.All.Select(Bots.Name));
+            var answer = console.Prompt(
+                new TextPrompt<string>($"Bot types? [grey]({names}, random, or a comma-separated list, one per bot)[/]")
+                    .DefaultValue("basic")
+                    .Validate(text => TryParseBotTypes(text, bots, seed, out _), $"[red]Name one type for every bot, or one for all of them: {names} or random.[/]"));
+            TryParseBotTypes(answer, bots, seed, out var types);
+            return types;
+        }
+
+        private static bool TryParseBotTypes(string text, int bots, int seed, out List<BotType> types)
+        {
+            types = new List<BotType>();
+            var names = text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (names.Length != 1 && names.Length != bots)
+            {
+                return false;
+            }
+
+            // The mix is drawn afresh from the seed on every attempt, so it comes out the same.
+            var random = Bots.RandomFor(seed, 0);
+            foreach (var name in names.Length == 1 ? Enumerable.Repeat(names[0], bots) : names)
+            {
+                if (name.Equals("random", StringComparison.OrdinalIgnoreCase))
+                {
+                    types.Add(Bots.All[random.Next(Bots.All.Count)]);
+                }
+                else if (Bots.TryParse(name, out var type))
+                {
+                    types.Add(type);
+                }
+                else
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         // Fills in the rules and returns the shuffle seed to use.

@@ -16,26 +16,34 @@ namespace blackjack.Cli
         public const int HeaderRows = 1;
         public const int BarRows = 4;
 
-        // seatLines is how many grid rows each seat takes (its name, cards and status).
+        // seatLines is how many grid rows each seat takes (its name, tag, cards and status); the
+        // tag row is given up when the height has no room for it.
         public TableLayout(int width, int height, int seats, int seatLines)
         {
             Width = width;
             Height = height;
+            SeatLines = seatLines;
             CountPanel = width >= CountPanelWidth;
             TwoSeatRows = width < OneSeatRowWidth && seats > 4;
             TileHeight = height >= TallTilesHeight ? CardArt.TallTileHeight
                 : height >= TilesHeight ? CardArt.TileHeight
                 : 0;
 
-            // The biggest cards that leave the log a row, and two seat rows only when they fit too.
+            // Two seat rows only when they fit beside the cards, then the biggest cards that leave
+            // the log a row, then the seats give up their tag row.
+            if (TwoSeatRows && Spare() < 1)
+            {
+                TwoSeatRows = false;
+            }
+
             while (TileHeight > 0 && Spare() < 1)
             {
                 TileHeight = TileHeight == CardArt.TallTileHeight ? CardArt.TileHeight : 0;
             }
 
-            if (Spare() < 1)
+            if (Spare() < 1 && SeatLines > 3)
             {
-                TwoSeatRows = false;
+                SeatLines--;
             }
 
             DealerRows = TileHeight == 0 ? 2 : TileHeight + 2;
@@ -50,7 +58,7 @@ namespace blackjack.Cli
             }
 
             int Spare() =>
-                height - HeaderRows - (TileHeight == 0 ? 2 : TileHeight + 2) - SeatRows * seatLines
+                height - HeaderRows - (TileHeight == 0 ? 2 : TileHeight + 2) - SeatRows * SeatLines
                 - (TileHeight == 0 ? 5 : TileHeight + 4) - BarRows - (CountPanel ? 0 : 1);
         }
 
@@ -65,6 +73,9 @@ namespace blackjack.Cli
         // The other seats wrap onto a second grid when the terminal is narrow.
         public bool TwoSeatRows { get; }
         public int SeatRows => TwoSeatRows ? 2 : 1;
+
+        // Grid rows per seat, as asked for or one fewer on the shortest terminals.
+        public int SeatLines { get; private set; }
 
         // Your seat's panel, borders included.
         public int PanelRows { get; }

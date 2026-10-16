@@ -1,8 +1,8 @@
 # Blackjack
 
-A console blackjack table: you, up to six basic-strategy bots, the book's advice on every move, and
-a live Hi-Lo card count. Double down, split pairs, take insurance, and try your luck on two side
-bets.
+A console blackjack table: you, up to six bots of five kinds (the book, a card counter, a cautious
+player, a dealer mimic and a Martingale gambler), the book's advice on every move, and a live Hi-Lo
+card count. Double down, split pairs, take insurance, and try your luck on two side bets.
 
 ## Play
 
@@ -21,10 +21,10 @@ Options go after `--`, for example `dotnet run --project blackjack -- --fast --s
 
 Setup asks for your name, whether to change the table rules (decks, minimum bet, soft 17, the
 blackjack payout, penetration, the doubling and splitting rules, and the shuffle seed, which starts
-out as the session's seed), your starting chips, how many bots to seat, whether to change the side
-bets, and whether to change the keys. Every question has a
-default, so Enter all the way through starts a game. The game needs a terminal of at least 60×16
-and is best at 80×24 or more; it fills whatever it gets, and follows a resize mid-game.
+out as the session's seed), your starting chips, how many bots to seat and of what kinds, whether
+to change the side bets, and whether to change the keys. Every question has a default, so Enter all
+the way through starts a game with two bots on the book. The game needs a terminal of at least
+60×16 and is best at 80×24 or more; it fills whatever it gets, and follows a resize mid-game.
 
 ## The table
 
@@ -32,13 +32,14 @@ The table fills the terminal. The header shows the round and the rules on the le
 in play, its seed and your chips on the right; as the terminal narrows the payout and minimum make
 way for them, then the rest of the rules. The dealer is under it, with one-line chips on fewer
 than 23 rows, three-line card tiles from 23 rows and five-line tiles from 36. Below are the other
-seats in the order they act, with a `▼ YOU` marker where you sit; under 90 columns a table with
-more than three bots wraps onto two rows of seats, when the height leaves a line for the log. Your
-seat is the panel at the bottom, taller with the tiles, with the Hi-Lo count in a panel beside it
-or, under 70 columns, on one line below it (`Hi-Lo running +3 · true +1.2 · 4.5 decks`). Then
-come the latest events, as many as there are rows left, then a bar that always says what the keys
-do right now. A line that would not fit its region is cut short with `…` rather than wrapped, so
-on a narrow terminal the bar's hints get shorter but the keys still work.
+seats in the order they act, each bot's kind in grey under its name (the tag row goes when the
+terminal is only 16 rows), with a `▼ YOU` marker where you sit; under 90 columns a table with more
+than three bots wraps onto two rows of seats, when the height leaves a line for the log. Your seat
+is the panel at the bottom, taller with the tiles, with the Hi-Lo count in a panel beside it or,
+under 70 columns, on one line below it (`Hi-Lo running +3 · true +1.2 · 4.5 decks`). Then come
+the latest events, as many as there are rows left, then a bar that always says what the keys do
+right now. A line that would not fit its region is cut short with `…` rather than wrapped, so on
+a narrow terminal the bar's hints get shorter but the keys still work.
 
 Every region's size depends only on the terminal size and the number of seats, never on the cards
 or the log, so nothing moves between frames; what does not fit a region is cropped inside it.
@@ -128,6 +129,28 @@ Deal-time bets are settled right after the dealer peeks, so the log and your sea
 you play. The cash-out summary counts the side bets placed and won and gives their net on its own
 row, apart from the main game's.
 
+## Bots
+
+The bots fill the seats either side of you and come in five kinds:
+
+| Kind | Tag | Bets | Plays |
+| --- | --- | --- | --- |
+| `basic` | `book` | the table minimum | the full multi-deck book; never takes insurance |
+| `counter` | `count` | by the Hi-Lo true count, in units of the minimum: 1 below +2, then 2, 4 and 8 at +2, +3 and +4, and 12 from +5, as far as its chips go | the book with the usual index plays on top (16 and 15 against a ten, 12 and 13 against small cards, doubling 9, 10 and 11 when the count says so); takes insurance from +3 |
+| `cautious` | `safe` | the minimum | never busts: hits only hard 11 or less and soft 17 or less, and never doubles, splits or insures |
+| `mimic` | `mimic` | the minimum | like the dealer: hits below 17, and soft 17 when the dealer does; never doubles, splits or insures |
+| `gambler` | `gambler` | Martingale: the minimum, doubled after every round it lost chips on and back to the minimum after one it didn't, as far as its chips go | the book, except that on hard 12 to 16 it goes against it on a hunch one time in eight, and takes insurance one time in four |
+
+With at least one bot at the table, setup asks "Bot types?". Answer with one kind for all of them,
+`random` for a mix, or a comma-separated list with one entry per bot in seat order, such as
+`counter, gambler`; `random` works inside a list too, and anything else is refused and asked again.
+The default is `basic`. The mix and the gambler's hunches are drawn from the session seed, so the
+same seed seats the same bots and they make the same choices.
+
+Each bot's tag shows in grey under its name on the table. The cash-out summary adds a row per bot,
+such as `Bot 1 (counter)`, with its net against the chips it started with; a bot that went broke and
+left the table is still listed.
+
 ## Replaying a session
 
 Every session shuffles from a seed: the one `--seed` gives, or one picked at random. Each shoe is
@@ -135,8 +158,8 @@ shuffled from that seed and its own number, so shoe 3 of seed 42 is the same sho
 and 2 were played. The shuffle messages say which shoe is coming out, and the cash-out summary
 lists the seed and the shoes you played with the command that deals them again, such as
 `dotnet run --project blackjack -- --seed 42 --shoe 3` (`--shoe` only appears when you started
-past shoe 1). Answer setup the same way, since the decks and the number of bots decide who gets
-which card, and the same cards come out.
+past shoe 1). Answer setup the same way, since the decks, the number of bots and their kinds decide
+who gets which card, and the same cards come out.
 
 ## Key bindings
 
@@ -152,14 +175,16 @@ key also declines insurance, so it can't double as the insurance key.
 - `blackjack/Domain`: `Card`, `Hand`, `Player`, `Shoe`
 - `blackjack/Engine`: `Game` (the round state machine), `Rules`, `CardCounter`
 - `blackjack/Engine/SideBets`: `ISideBet` and the six bets, `SideBets.All`, `SideBetStake`
-- `blackjack/Strategies`: `IPlayerStrategy`, `Move`, `MoveOptions`, `BasicStrategyBot` (the full
-  multi-deck book, built for the table's rules)
+- `blackjack/Strategies`: `IPlayerStrategy` and the `TableContext` (rules and count) every decision
+  gets, `Move`, `MoveOptions`, the bots (`BasicStrategyBot`, the full multi-deck book built for the
+  table's rules, `CounterBot`, `CautiousBot`, `MimicBot` and `GamblerBot`) and `BotType` with
+  `Bots`, which builds and names them
 - `blackjack/Cli`: the Spectre.Console front end: `TableScreen` draws the table and follows
   resizes, `TableLayout` shares the rows and columns out for a terminal size, `Line` is a line
   of markup that is cut rather than wrapped, `CardArt` draws the cards, `ConsoleStrategy` is your
   seat, `FastForward` is the autopilot, `KeyBindings` reads `keys.ini`
 - `blackjack.Tests`: xUnit tests, using a stacked shoe to rig hands; the side-bet house edges are
-  checked by exact enumeration of a six-deck shoe
+  checked by exact enumeration of a six-deck shoe, and each bot kind's by simulation
 
 ```sh
 dotnet test

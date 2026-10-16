@@ -68,11 +68,12 @@ namespace blackjack.Strategies
 
         public Rules Rules => rules;
 
-        public decimal DecideBet(decimal chips, decimal minBet) => chips >= minBet ? minBet : 0m;
+        public decimal DecideBet(decimal chips, TableContext table) =>
+            chips >= table.Rules.MinimumBet ? table.Rules.MinimumBet : 0m;
 
-        public bool DecideInsurance(Hand hand) => false;
+        public bool DecideInsurance(Hand hand, TableContext table) => false;
 
-        public Move DecideMove(Hand hand, Card dealerUpcard, MoveOptions options)
+        public Move DecideMove(Hand hand, Card dealerUpcard, MoveOptions options, TableContext table)
         {
             var column = dealerUpcard.PointValue - 2; // 2 to ace
             var twoCards = hand.Cards.Count == 2;

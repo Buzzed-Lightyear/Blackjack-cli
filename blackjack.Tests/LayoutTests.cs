@@ -23,11 +23,11 @@ namespace blackjack.Tests
 
         private sealed class Stands : IPlayerStrategy
         {
-            public decimal DecideBet(decimal chips, decimal minBet) => minBet;
+            public decimal DecideBet(decimal chips, TableContext table) => table.Rules.MinimumBet;
 
-            public bool DecideInsurance(Hand hand) => false;
+            public bool DecideInsurance(Hand hand, TableContext table) => false;
 
-            public Move DecideMove(Hand hand, Card dealerUpcard, MoveOptions options) => Move.Stand;
+            public Move DecideMove(Hand hand, Card dealerUpcard, MoveOptions options, TableContext table) => Move.Stand;
         }
 
         private sealed record Table(Game Game, TableScreen Screen, Player Human, ISideBet[] SideBets);
@@ -126,13 +126,14 @@ namespace blackjack.Tests
         }
 
         [Theory]
-        [InlineData(80, 24, 6, true)]
+        [InlineData(80, 28, 6, true)]
         [InlineData(89, 30, 6, true)]
         [InlineData(90, 30, 6, false)]
         [InlineData(100, 24, 6, false)]
         [InlineData(80, 24, 3, false)]
-        [InlineData(60, 20, 6, true)]
-        [InlineData(60, 19, 6, false)] // no row to spare for a second seat row
+        [InlineData(80, 24, 6, false)] // the tiles come first: no room beside them for a second seat row
+        [InlineData(60, 22, 6, true)]
+        [InlineData(60, 21, 6, false)] // no row to spare for a second seat row
         public void Seats_WrapOntoTwoRows_OnANarrowTerminal(int width, int height, int bots, bool twoRows)
         {
             var console = NewConsole(width, height);
@@ -293,20 +294,29 @@ namespace blackjack.Tests
             table.Screen.Log(new string('x', 150));
             var frame = Frame(console, table.Screen);
 
-            // Ten rows: the long last line is cut to one, and the two oldest lines are gone.
+            // Nine rows: the long last line is cut to one, and the three oldest lines are gone.
             AssertFills(frame, 100, 30);
             Assert.Contains("event 12", frame);
-            Assert.Contains("event 4", frame);
-            Assert.DoesNotContain("event 3", frame);
+            Assert.Contains("event 5", frame);
+            Assert.DoesNotContain("event 4", frame);
             Assert.Contains("› " + new string('x', 97) + "…", frame);
-            Assert.Equal(RowOf(frame, "^┏") - 10, RowOf(frame, "event 4"));
+            Assert.Equal(RowOf(frame, "^┏") - 9, RowOf(frame, "event 5"));
+        }
+
+        [Fact]
+        public void SeatLines_GiveUpTheTagRow_OnlyOnTheShortestTerminal()
+        {
+            Assert.Equal(3, new TableLayout(110, 16, 7, 4).SeatLines);
+            Assert.Equal(4, new TableLayout(110, 17, 7, 4).SeatLines);
+            Assert.Equal(3, new TableLayout(60, 17, 7, 4).SeatLines); // the count line takes a row too
+            Assert.Equal(4, new TableLayout(60, 18, 7, 4).SeatLines);
         }
 
         [Theory]
         [InlineData(60, 16, 7, 0, 1, false, 5, false, 1)]
         [InlineData(60, 20, 7, 0, 2, true, 5, false, 1)]
         [InlineData(69, 36, 1, 5, 7, false, 9, false, 11)]
-        [InlineData(80, 23, 7, 0, 2, true, 5, true, 5)]
+        [InlineData(80, 23, 7, 3, 5, false, 7, true, 3)] // the tiles come first, so the seats stay on one row
         [InlineData(80, 24, 7, 3, 5, true, 7, true, 1)]
         [InlineData(89, 36, 5, 5, 7, true, 9, true, 9)]
         [InlineData(100, 30, 3, 3, 5, false, 7, true, 10)]
