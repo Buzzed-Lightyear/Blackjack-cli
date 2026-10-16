@@ -9,7 +9,8 @@ namespace blackjack.Cli
     {
         public const int MaxChips = 1_000_000_000;
 
-        public static TableSettings Ask(IAnsiConsole console, KeyBindings keys, string keysPath)
+        // seed is the shuffle seed offered with the rules; the player can keep it or type another.
+        public static TableSettings Ask(IAnsiConsole console, int seed, KeyBindings keys, string keysPath)
         {
             var name = console.Prompt(
                 new TextPrompt<string>("Your name?")
@@ -20,7 +21,7 @@ namespace blackjack.Cli
             var rules = new Rules();
             if (console.Confirm("Change the table rules?", defaultValue: false))
             {
-                AskRules(console, rules);
+                seed = AskRules(console, rules, seed);
             }
 
             var minBet = (int)rules.MinimumBet;
@@ -49,10 +50,11 @@ namespace blackjack.Cli
                 }
             }
 
-            return new TableSettings(name, chips, bots, rules);
+            return new TableSettings(name, chips, bots, rules, seed);
         }
 
-        private static void AskRules(IAnsiConsole console, Rules rules)
+        // Fills in the rules and returns the shuffle seed to use.
+        private static int AskRules(IAnsiConsole console, Rules rules, int seed)
         {
             rules.DeckCount = console.Prompt(
                 new TextPrompt<int>("Decks in the shoe? [grey](1-8)[/]")
@@ -77,6 +79,10 @@ namespace blackjack.Cli
                     .DefaultValue((int)(rules.Penetration * 100))
                     .Validate(p => p is >= 50 and <= 90, "[red]Pick 50 to 90.[/]"));
             rules.Penetration = penetration / 100m;
+
+            return console.Prompt(
+                new TextPrompt<int>("Shuffle seed? [grey](the same seed deals the same shoes)[/]")
+                    .DefaultValue(seed));
         }
     }
 }

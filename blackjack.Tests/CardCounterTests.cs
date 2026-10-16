@@ -112,7 +112,7 @@ namespace blackjack.Tests
         {
             var player = new Player("P", 1000m, new BasicStrategyBot());
             var rules = new Rules { DeckCount = 1, Penetration = 0.05m };
-            var game = new Game(rules, new[] { player }, new Shoe(1, new Random(3), rules.Penetration));
+            var game = new Game(rules, new[] { player }, new Shoe(1, 3, rules.Penetration));
             var counter = new CardCounter();
             var shuffles = 0;
             game.CardRevealed += counter.OnCardRevealed;
