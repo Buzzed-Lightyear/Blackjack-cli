@@ -1,4 +1,5 @@
 using blackjack.Engine;
+using blackjack.Engine.SideBets;
 
 namespace blackjack.Cli
 {
@@ -6,5 +7,6 @@ namespace blackjack.Cli
         string Name,
         decimal Chips,
         int Bots,
-        Rules Rules);
+        Rules Rules,
+        IReadOnlyList<ISideBet> SideBets);
 }

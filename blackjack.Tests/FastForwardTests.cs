@@ -1,4 +1,6 @@
 using blackjack.Cli;
+using blackjack.Domain;
+using blackjack.Strategies;
 
 namespace blackjack.Tests
 {
@@ -67,9 +69,9 @@ namespace blackjack.Tests
         {
             var autopilot = new FastForward();
             autopilot.Watch();
-            var hand = Cards.HandOf("10h 7c");
-            hand.Bet = 10m;
-            autopilot.RecordHand(hand);
+            var player = new Player("P", 100m, new BasicStrategyBot());
+            player.PlaceBet(10m);
+            autopilot.RecordRound(player);
 
             Assert.Equal(1, autopilot.Hands);
             Assert.Equal(-10m, autopilot.Net); // unsettled, so nothing paid back

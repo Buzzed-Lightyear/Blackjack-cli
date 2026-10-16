@@ -6,10 +6,12 @@ namespace blackjack.Cli
     internal static class KeyBindingsEditor
     {
         public static string Summary(KeyBindings keys) =>
-            $"{K(keys, KeyAction.Hit)} hit · {K(keys, KeyAction.Stand)} stand · {K(keys, KeyAction.Deal)} deal · "
-            + $"{K(keys, KeyAction.BetDown)}/{K(keys, KeyAction.BetUp)} bet · {K(keys, KeyAction.FastForward)} autopilot · "
-            + $"{K(keys, KeyAction.NextShoe)} next shoe · {K(keys, KeyAction.Book)} book · {K(keys, KeyAction.Count)} count · "
-            + $"{K(keys, KeyAction.CashOut)} cash out";
+            $"{K(keys, KeyAction.Hit)} hit · {K(keys, KeyAction.Stand)} stand · {K(keys, KeyAction.Double)} double · "
+            + $"{K(keys, KeyAction.Split)} split · {K(keys, KeyAction.Deal)} deal · "
+            + $"{K(keys, KeyAction.BetDown)}/{K(keys, KeyAction.BetUp)} bet · "
+            + $"{K(keys, KeyAction.SideBet1)}/{K(keys, KeyAction.SideBet2)} side bets · {K(keys, KeyAction.Insurance)} insurance · "
+            + $"{K(keys, KeyAction.FastForward)} autopilot · {K(keys, KeyAction.NextShoe)} next shoe · "
+            + $"{K(keys, KeyAction.Book)} book · {K(keys, KeyAction.Count)} count · {K(keys, KeyAction.CashOut)} cash out";
 
         public static void Edit(IAnsiConsole console, KeyBindings keys)
         {

@@ -23,7 +23,12 @@ namespace blackjack.Tests
 
             Assert.Equal("D", keys.Label(KeyAction.Hit));
             Assert.Equal("S", keys.Label(KeyAction.Stand));
+            Assert.Equal("A", keys.Label(KeyAction.Double));
+            Assert.Equal("W", keys.Label(KeyAction.Split));
             Assert.Equal("Space", keys.Label(KeyAction.Deal));
+            Assert.Equal("T", keys.Label(KeyAction.SideBet1));
+            Assert.Equal("G", keys.Label(KeyAction.SideBet2));
+            Assert.Equal("Z", keys.Label(KeyAction.Insurance));
             Assert.True(keys.Is(KeyAction.Hit, Press('d', ConsoleKey.D)));
             Assert.True(keys.Is(KeyAction.Hit, Press('D', ConsoleKey.D)));
             Assert.True(keys.Is(KeyAction.Hit, Press('\0', ConsoleKey.D)));
@@ -84,8 +89,15 @@ namespace blackjack.Tests
 
             Assert.Null(keys.Conflict(KeyAction.Hit, Chord("F")));    // autopilot is only read between hands
             Assert.Null(keys.Conflict(KeyAction.Slower, Chord("Q"))); // already Q, and lower-bet is never read on autopilot
+            Assert.Null(keys.Conflict(KeyAction.Split, Chord("T")));  // side bets are only read between hands
+            Assert.Null(keys.Conflict(KeyAction.Insurance, Chord("D")));
             Assert.Equal(KeyAction.Book, keys.Conflict(KeyAction.Deal, Chord("B")));
             Assert.Equal(KeyAction.Stand, keys.Conflict(KeyAction.Hit, Chord("S")));
+            Assert.Equal(KeyAction.Double, keys.Conflict(KeyAction.Hit, Chord("A")));
+            Assert.Equal(KeyAction.Split, keys.Conflict(KeyAction.Stand, Chord("W")));
+            Assert.Equal(KeyAction.FastForward, keys.Conflict(KeyAction.SideBet1, Chord("F")));
+            Assert.Equal(KeyAction.Insurance, keys.Conflict(KeyAction.Deal, Chord("Z")));  // the deal key declines insurance
+            Assert.Equal(KeyAction.Deal, keys.Conflict(KeyAction.Insurance, Chord("Space")));
         }
 
         [Fact]
@@ -112,6 +124,7 @@ namespace blackjack.Tests
                 Assert.True(keys.Is(KeyAction.Stand, Press(' ', ConsoleKey.Spacebar)));
                 Assert.Equal("Space", keys.Label(KeyAction.Deal));  // Hyper isn't a key
                 Assert.Equal("X", keys.Label(KeyAction.CashOut));   // digits are for typing bets
+                Assert.Equal("A", keys.Label(KeyAction.Double));    // untouched
                 Assert.Equal(3, warnings.Count);
             }
             finally
@@ -153,8 +166,9 @@ namespace blackjack.Tests
         public void Save_ThenLoad_KeepsTheBindings()
         {
             var keys = KeyBindings.Defaults();
-            keys.Set(KeyAction.Hit, Chord("A"));
+            keys.Set(KeyAction.Hit, Chord("H"));
             keys.Set(KeyAction.Deal, Chord("Tab"));
+            keys.Set(KeyAction.SideBet2, Chord("F7"));
             var path = Path.Combine(Path.GetTempPath(), $"blackjack-keys-{Guid.NewGuid():N}.ini");
             try
             {
