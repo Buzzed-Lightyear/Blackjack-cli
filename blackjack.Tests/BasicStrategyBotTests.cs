@@ -8,6 +8,7 @@ namespace blackjack.Tests
     {
         private static readonly MoveOptions Anything = new(CanDouble: true, CanSplit: true);
         private static readonly MoveOptions HitOrStand = new(CanDouble: false, CanSplit: false);
+        private static readonly TableContext Fresh = Tables.Fresh();
 
         private readonly BasicStrategyBot bot = new();
 
@@ -110,7 +111,7 @@ namespace blackjack.Tests
         [InlineData("2h 2c", "8s", Move.Hit)]
         public void DecideMove_FollowsTheBook(string hand, string upcard, Move expected)
         {
-            Assert.Equal(expected, bot.DecideMove(HandOf(hand), C(upcard), Anything));
+            Assert.Equal(expected, bot.DecideMove(HandOf(hand), C(upcard), Anything, Fresh));
         }
 
         [Theory]
@@ -123,7 +124,7 @@ namespace blackjack.Tests
         {
             var h17 = new BasicStrategyBot(new Rules { DealerHitsSoft17 = true });
 
-            Assert.Equal(expected, h17.DecideMove(HandOf(hand), C(upcard), Anything));
+            Assert.Equal(expected, h17.DecideMove(HandOf(hand), C(upcard), Anything, Fresh));
         }
 
         [Theory]
@@ -142,7 +143,7 @@ namespace blackjack.Tests
         {
             var noDas = new BasicStrategyBot(new Rules { DoubleAfterSplit = false });
 
-            Assert.Equal(expected, noDas.DecideMove(HandOf(hand), C(upcard), Anything));
+            Assert.Equal(expected, noDas.DecideMove(HandOf(hand), C(upcard), Anything, Fresh));
         }
 
         [Theory]
@@ -164,7 +165,7 @@ namespace blackjack.Tests
         [InlineData("2h 2c", "3s", Move.Hit)]
         public void DecideMove_FallsBack_WhenTheTableAllowsOnlyHitOrStand(string hand, string upcard, Move expected)
         {
-            Assert.Equal(expected, bot.DecideMove(HandOf(hand), C(upcard), HitOrStand));
+            Assert.Equal(expected, bot.DecideMove(HandOf(hand), C(upcard), HitOrStand, Fresh));
         }
 
         [Fact]
@@ -172,8 +173,8 @@ namespace blackjack.Tests
         {
             var options = new MoveOptions(CanDouble: true, CanSplit: false);
 
-            Assert.Equal(Move.Double, bot.DecideMove(HandOf("5h 5c"), C("9s"), options));
-            Assert.Equal(Move.Hit, bot.DecideMove(HandOf("8h 8c"), C("10s"), options));
+            Assert.Equal(Move.Double, bot.DecideMove(HandOf("5h 5c"), C("9s"), options, Fresh));
+            Assert.Equal(Move.Hit, bot.DecideMove(HandOf("8h 8c"), C("10s"), options, Fresh));
         }
 
         [Fact]
@@ -181,7 +182,7 @@ namespace blackjack.Tests
         {
             var h17 = new BasicStrategyBot(new Rules { DealerHitsSoft17 = true });
 
-            Assert.Equal(Move.Stand, h17.DecideMove(HandOf("Ah 8c"), C("6s"), HitOrStand));
+            Assert.Equal(Move.Stand, h17.DecideMove(HandOf("Ah 8c"), C("6s"), HitOrStand, Fresh));
         }
 
         [Fact]
@@ -190,23 +191,24 @@ namespace blackjack.Tests
             var again = new MoveOptions(CanDouble: false, CanSplit: true, CanHit: false);
             var done = new MoveOptions(CanDouble: false, CanSplit: false, CanHit: false);
 
-            Assert.Equal(Move.Split, bot.DecideMove(HandOf("Ah Ac"), C("10s"), again));
-            Assert.Equal(Move.Stand, bot.DecideMove(HandOf("Ah Ac"), C("10s"), done));
+            Assert.Equal(Move.Split, bot.DecideMove(HandOf("Ah Ac"), C("10s"), again, Fresh));
+            Assert.Equal(Move.Stand, bot.DecideMove(HandOf("Ah Ac"), C("10s"), done, Fresh));
         }
 
         [Fact]
         public void DecideInsurance_IsAlwaysNo()
         {
-            Assert.False(bot.DecideInsurance(HandOf("10h Kc")));
-            Assert.False(bot.DecideInsurance(HandOf("10h 6c")));
+            Assert.False(bot.DecideInsurance(HandOf("10h Kc"), Fresh));
+            Assert.False(bot.DecideInsurance(HandOf("10h 6c"), Tables.At(5m)));
         }
 
         [Fact]
         public void DecideBet_BetsTheMinimum_OrSitsOutWhenBroke()
         {
-            Assert.Equal(10m, bot.DecideBet(500m, 10m));
-            Assert.Equal(10m, bot.DecideBet(10m, 10m));
-            Assert.Equal(0m, bot.DecideBet(9m, 10m));
+            Assert.Equal(10m, bot.DecideBet(500m, Fresh));
+            Assert.Equal(10m, bot.DecideBet(10m, Tables.At(5m)));
+            Assert.Equal(0m, bot.DecideBet(9m, Fresh));
+            Assert.Equal(25m, bot.DecideBet(500m, Tables.Fresh(new Rules { MinimumBet = 25m })));
         }
     }
 }

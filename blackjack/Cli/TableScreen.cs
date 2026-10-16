@@ -2,6 +2,7 @@ using System.Diagnostics;
 using blackjack.Domain;
 using blackjack.Engine;
 using blackjack.Engine.SideBets;
+using blackjack.Strategies;
 using Spectre.Console;
 using Spectre.Console.Rendering;
 
@@ -22,7 +23,7 @@ namespace blackjack.Cli
     {
         private const int CountWidth = 26;
         private const int InfoWidth = 22;
-        private const int MinHeight = 16;
+        private const int MinHeight = 17;
         private const int MaxHeight = 34;
         private const int BigLayoutHeight = 23;
         private const int MaxEvents = 40;
@@ -209,7 +210,7 @@ namespace blackjack.Cli
         {
             var height = Math.Clamp(console.Profile.Height - 1, MinHeight, MaxHeight);
             var big = height >= BigLayoutHeight;
-            var (dealerRows, seatRows, youRows) = big ? (5, 4, 7) : (2, 3, 5);
+            var (dealerRows, seatRows, youRows) = big ? (5, 5, 7) : (2, 4, 5);
             var eventRows = height - 1 - dealerRows - seatRows - youRows - 4;
 
             var root = new Layout("table").SplitRows(
@@ -315,6 +316,7 @@ namespace blackjack.Cli
             }
 
             grid.AddRow(seats.Select(SeatName).ToArray());
+            grid.AddRow(seats.Select(SeatTag).ToArray());
             grid.AddRow(seats.Select(SeatCards).ToArray());
             grid.AddRow(seats.Select(SeatStatus).ToArray());
             return grid;
@@ -336,6 +338,10 @@ namespace blackjack.Cli
             var done = seat.Hands.Count > 0 && seat.Hands.All(h => h.Outcome is not null || h.IsStood);
             return new Markup(done ? $"[grey]{Name(seat)}[/]" : $"[bold]{Name(seat)}[/]");
         }
+
+        // A bot's type under its name; nothing under yours.
+        private IRenderable SeatTag(Player seat) =>
+            seat != human && Bots.TypeOf(seat.Strategy) is { } type ? new Markup($"[grey]{Bots.Tag(type)}[/]") : new Text("");
 
         // Split hands sit side by side: 8♠ 3♦ | 8♥ 10♣.
         private IRenderable SeatCards(Player seat)

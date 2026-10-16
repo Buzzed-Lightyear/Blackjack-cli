@@ -32,11 +32,11 @@ namespace blackjack.Tests
 
             public int Decisions { get; private set; }
 
-            public decimal DecideBet(decimal chips, decimal minBet) => minBet;
+            public decimal DecideBet(decimal chips, TableContext table) => table.Rules.MinimumBet;
 
-            public bool DecideInsurance(Hand hand) => false;
+            public bool DecideInsurance(Hand hand, TableContext table) => false;
 
-            public Move DecideMove(Hand hand, Card dealerUpcard, MoveOptions options)
+            public Move DecideMove(Hand hand, Card dealerUpcard, MoveOptions options, TableContext table)
             {
                 Decisions++;
                 var move = moves.Count > 0 ? moves.Dequeue() : Move.Stand;
@@ -83,9 +83,10 @@ namespace blackjack.Tests
 
             game.Deal();
             var insuranceOffered = game.DealerUpcard!.Rank == Rank.Ace;
+            var table = Tables.Fresh(rules);
             while (game.Phase == Phase.Insurance)
             {
-                if (game.CurrentPlayer!.Strategy.DecideInsurance(game.CurrentPlayer.Hands[0]))
+                if (game.CurrentPlayer!.Strategy.DecideInsurance(game.CurrentPlayer.Hands[0], table))
                 {
                     game.TakeInsurance();
                 }
@@ -107,10 +108,10 @@ namespace blackjack.Tests
                 {
                     firstSeen = true;
                     firstOptions = options;
-                    firstAdvice = book.DecideMove(game.CurrentHand!, game.DealerUpcard!, options);
+                    firstAdvice = book.DecideMove(game.CurrentHand!, game.DealerUpcard!, options, table);
                 }
 
-                switch (player.Strategy.DecideMove(game.CurrentHand!, game.DealerUpcard!, options))
+                switch (player.Strategy.DecideMove(game.CurrentHand!, game.DealerUpcard!, options, table))
                 {
                     case Move.Hit:
                         game.Hit();
@@ -150,7 +151,8 @@ namespace blackjack.Tests
         private static bool NeedsAMove(FirstRound round) =>
             !round.Hand.IsNatural && !round.Game.DealerHand.IsNatural && !round.InsuranceOffered;
 
-        private static void PushSetup(TestConsole console, string bots = "0", string? chips = null)
+        // The bot types are only asked for when there are bots; types null keeps the default, basic.
+        private static void PushSetup(TestConsole console, string bots = "0", string? chips = null, string? types = null)
         {
             console.Input.PushTextWithEnter("Tester");
             console.Input.PushKey(ConsoleKey.Enter);      // keep the default rules
@@ -164,6 +166,18 @@ namespace blackjack.Tests
             }
 
             console.Input.PushTextWithEnter(bots);
+            if (bots != "0")
+            {
+                if (types is null)
+                {
+                    console.Input.PushKey(ConsoleKey.Enter);  // basic bots
+                }
+                else
+                {
+                    console.Input.PushTextWithEnter(types);
+                }
+            }
+
             console.Input.PushKey(ConsoleKey.Enter);      // keep 21+3 and Bust It
             console.Input.PushKey(ConsoleKey.Enter);      // keep the keys
         }
@@ -289,6 +303,7 @@ namespace blackjack.Tests
             console.Input.PushKey(ConsoleKey.Enter);  // keep the seed
             console.Input.PushKey(ConsoleKey.Enter);  // 1000 chips
             console.Input.PushTextWithEnter("6");     // bots
+            console.Input.PushKey(ConsoleKey.Enter);  // basic bots
             console.Input.PushKey(ConsoleKey.Enter);  // keep the side bets
             console.Input.PushKey(ConsoleKey.Enter);  // keep the keys
             console.Input.PushKey(ConsoleKey.Spacebar);
@@ -769,10 +784,10 @@ namespace blackjack.Tests
             console.Input.PushKey(ConsoleKey.Spacebar);
             console.Input.PushKey(ConsoleKey.Spacebar);
 
-            Assert.Equal(10m, strategy.DecideBet(100m, 10m));  // starts at the minimum
-            Assert.Equal(30m, strategy.DecideBet(100m, 10m));
-            Assert.Equal(20m, strategy.DecideBet(100m, 10m));  // starts from the last bet
-            Assert.Equal(15m, strategy.DecideBet(15.5m, 10m)); // capped at whole chips in hand
+            Assert.Equal(10m, strategy.DecideBet(100m, Tables.Fresh()));  // starts at the minimum
+            Assert.Equal(30m, strategy.DecideBet(100m, Tables.Fresh()));
+            Assert.Equal(20m, strategy.DecideBet(100m, Tables.Fresh()));  // starts from the last bet
+            Assert.Equal(15m, strategy.DecideBet(15.5m, Tables.Fresh())); // capped at whole chips in hand
             Assert.Empty(strategy.SideBetStakes);
             Assert.DoesNotContain("side bet", console.Output);
         }
@@ -794,7 +809,7 @@ namespace blackjack.Tests
             console.Input.PushKey(ConsoleKey.D5);
             console.Input.PushKey(ConsoleKey.Spacebar);
 
-            Assert.Equal(45m, strategy.DecideBet(100m, 10m));
+            Assert.Equal(45m, strategy.DecideBet(100m, Tables.Fresh()));
             Assert.Contains("the minimum is 10", console.Output);
             Assert.Contains("you have 100", console.Output);
         }
@@ -811,7 +826,7 @@ namespace blackjack.Tests
             console.Input.PushKey(ConsoleKey.G);               // Bust It: 10
             console.Input.PushKey(ConsoleKey.Spacebar);
 
-            Assert.Equal(10m, strategy.DecideBet(100m, 10m));
+            Assert.Equal(10m, strategy.DecideBet(100m, Tables.Fresh()));
             Assert.Equal(new[] { (sideBets[0], 10m), (sideBets[1], 10m) }, strategy.SideBetStakes);
             Assert.Contains("T/G side bets", console.Output);
             Assert.Contains("T 21+3 10", console.Output);
@@ -823,14 +838,14 @@ namespace blackjack.Tests
             console.Input.PushKey(ConsoleKey.T);               // 21+3: 20
             console.Input.PushKey(ConsoleKey.Spacebar);
 
-            Assert.Equal(20m, strategy.DecideBet(100m, 10m));
+            Assert.Equal(20m, strategy.DecideBet(100m, Tables.Fresh()));
             Assert.Equal(new[] { (sideBets[0], 20m), (sideBets[1], 10m) }, strategy.SideBetStakes);
 
             // With 35 chips the main bet of 20 leaves 15: the first stake keeps what fits, the
             // second is squeezed out.
             console.Input.PushKey(ConsoleKey.Spacebar);
 
-            Assert.Equal(20m, strategy.DecideBet(35m, 10m));
+            Assert.Equal(20m, strategy.DecideBet(35m, Tables.Fresh()));
             Assert.Equal(new[] { (sideBets[0], 15m) }, strategy.SideBetStakes);
         }
 
@@ -843,10 +858,10 @@ namespace blackjack.Tests
             console.Input.PushKey(ConsoleKey.T);
             console.Input.PushKey(ConsoleKey.F);
 
-            Assert.Equal(10m, strategy.DecideBet(100m, 10m));
+            Assert.Equal(10m, strategy.DecideBet(100m, Tables.Fresh()));
             Assert.True(autopilot.IsActive);
             Assert.Empty(strategy.SideBetStakes);
-            Assert.False(strategy.DecideInsurance(HandOf("10h 7c")));
+            Assert.False(strategy.DecideInsurance(HandOf("10h 7c"), Tables.Fresh()));
         }
 
         [Fact]
@@ -859,7 +874,7 @@ namespace blackjack.Tests
             console.Input.PushKey(ConsoleKey.X);
             console.Input.PushKey(ConsoleKey.X);
 
-            Assert.Equal(0m, strategy.DecideBet(100m, 10m));
+            Assert.Equal(0m, strategy.DecideBet(100m, Tables.Fresh()));
             Assert.Contains("Cash out with 100 chips?", console.Output);
         }
 
@@ -871,15 +886,15 @@ namespace blackjack.Tests
             console.Input.PushKey(ConsoleKey.E);
             console.Input.PushKey(ConsoleKey.F);
 
-            Assert.Equal(10m, strategy.DecideBet(100m, 10m));  // the book bets the minimum
+            Assert.Equal(10m, strategy.DecideBet(100m, Tables.Fresh()));  // the book bets the minimum
             Assert.True(autopilot.IsActive);
             Assert.False(autopilot.SkippingShoes);
-            Assert.Equal(Move.Stand, strategy.DecideMove(HandOf("10h 7c"), C("10s"), new MoveOptions(true, false)));
-            Assert.Equal(Move.Double, strategy.DecideMove(HandOf("6h 5c"), C("10s"), new MoveOptions(true, false)));
+            Assert.Equal(Move.Stand, strategy.DecideMove(HandOf("10h 7c"), C("10s"), new MoveOptions(true, false), Tables.Fresh()));
+            Assert.Equal(Move.Double, strategy.DecideMove(HandOf("6h 5c"), C("10s"), new MoveOptions(true, false), Tables.Fresh()));
 
             autopilot.Stop();
             console.Input.PushKey(ConsoleKey.R);
-            strategy.DecideBet(100m, 10m);
+            strategy.DecideBet(100m, Tables.Fresh());
             Assert.True(autopilot.SkippingShoes);
         }
 
@@ -893,9 +908,9 @@ namespace blackjack.Tests
             console.Input.PushKey(ConsoleKey.B);               // hide the book
             console.Input.PushKey(ConsoleKey.S);
 
-            Assert.Equal(Move.Hit, strategy.DecideMove(HandOf("10h 6c"), C("10s"), new MoveOptions(true, false)));
+            Assert.Equal(Move.Hit, strategy.DecideMove(HandOf("10h 6c"), C("10s"), new MoveOptions(true, false), Tables.Fresh()));
             Assert.Contains("book: hit", console.Output);
-            Assert.Equal(Move.Stand, strategy.DecideMove(HandOf("10h 6c"), C("10s"), new MoveOptions(true, false)));
+            Assert.Equal(Move.Stand, strategy.DecideMove(HandOf("10h 6c"), C("10s"), new MoveOptions(true, false), Tables.Fresh()));
             Assert.False(screen.ShowBook);
 
             screen.Refresh();
@@ -912,7 +927,7 @@ namespace blackjack.Tests
             console.Input.PushKey(ConsoleKey.W);
             var start = console.Output.Length;
 
-            Assert.Equal(Move.Split, strategy.DecideMove(HandOf("8h 8c"), C("6s"), new MoveOptions(true, true)));
+            Assert.Equal(Move.Split, strategy.DecideMove(HandOf("8h 8c"), C("6s"), new MoveOptions(true, true), Tables.Fresh()));
             var offered = console.Output[start..];
             Assert.Contains("A double", offered);
             Assert.Contains("W SPLIT", offered);
@@ -924,7 +939,7 @@ namespace blackjack.Tests
             console.Input.PushKey(ConsoleKey.D);
             start = console.Output.Length;
 
-            Assert.Equal(Move.Hit, strategy.DecideMove(HandOf("8h 8c"), C("6s"), new MoveOptions(false, false)));
+            Assert.Equal(Move.Hit, strategy.DecideMove(HandOf("8h 8c"), C("6s"), new MoveOptions(false, false), Tables.Fresh()));
             var limited = console.Output[start..];
             Assert.DoesNotContain("A double", limited);
             Assert.DoesNotContain("W split", limited);
@@ -934,7 +949,7 @@ namespace blackjack.Tests
             console.Input.PushKey(ConsoleKey.S);
             start = console.Output.Length;
 
-            Assert.Equal(Move.Stand, strategy.DecideMove(HandOf("Ah Ac"), C("6s"), new MoveOptions(false, true, CanHit: false)));
+            Assert.Equal(Move.Stand, strategy.DecideMove(HandOf("Ah Ac"), C("6s"), new MoveOptions(false, true, CanHit: false), Tables.Fresh()));
             var acesOnly = console.Output[start..];
             Assert.DoesNotContain("D hit", acesOnly);
             Assert.Contains("The book says stand on a pair of 8s against a 6.", acesOnly);
@@ -960,6 +975,7 @@ namespace blackjack.Tests
             console.Input.PushTextWithEnter("777");   // seed
             console.Input.PushKey(ConsoleKey.Enter);  // default chips
             console.Input.PushTextWithEnter("6");     // bots
+            console.Input.PushTextWithEnter("cautious"); // all of them
             console.Input.PushKey(ConsoleKey.Enter);  // keep the side bets
             console.Input.PushKey(ConsoleKey.Enter);  // keep the keys
 
@@ -979,7 +995,7 @@ namespace blackjack.Tests
             Assert.False(settings.Rules.SplitBlackjackPaysEven);
             Assert.Equal(777, settings.Seed);
             Assert.Equal(1000m, settings.Chips);
-            Assert.Equal(6, settings.Bots);
+            Assert.Equal(Enumerable.Repeat(BotType.Cautious, 6), settings.BotTypes);
             Assert.Equal(new[] { "21+3", "Bust It" }, settings.SideBets.Select(b => b.Name));
         }
 
@@ -991,6 +1007,7 @@ namespace blackjack.Tests
             console.Input.PushKey(ConsoleKey.Enter);          // keep the default rules
             console.Input.PushKey(ConsoleKey.Enter);          // chips
             console.Input.PushKey(ConsoleKey.Enter);          // bots
+            console.Input.PushKey(ConsoleKey.Enter);          // basic bots
             console.Input.PushTextWithEnter("y");             // change the side bets
             console.Input.PushTextWithEnter("Lucky Ladies");
             console.Input.PushTextWithEnter("Lucky Ladies");  // the same twice: refused
@@ -1015,6 +1032,7 @@ namespace blackjack.Tests
             console.Input.PushTextWithEnter("1000.5");
             console.Input.PushTextWithEnter("1000000000");
             console.Input.PushKey(ConsoleKey.Enter);  // bots
+            console.Input.PushKey(ConsoleKey.Enter);  // basic bots
             console.Input.PushKey(ConsoleKey.Enter);  // keep the side bets
             console.Input.PushKey(ConsoleKey.Enter);  // keep the keys
 
@@ -1035,6 +1053,7 @@ namespace blackjack.Tests
             console.Input.PushKey(ConsoleKey.Enter);  // keep the default rules
             console.Input.PushKey(ConsoleKey.Enter);  // chips
             console.Input.PushKey(ConsoleKey.Enter);  // bots
+            console.Input.PushKey(ConsoleKey.Enter);  // basic bots
             console.Input.PushKey(ConsoleKey.Enter);  // keep the side bets
             console.Input.PushTextWithEnter("y");     // change the keys
             console.Input.PushKey(ConsoleKey.H);      // hit
@@ -1063,6 +1082,148 @@ namespace blackjack.Tests
             {
                 File.Delete(path);
             }
+        }
+
+        [Fact]
+        public void TableSetup_SeatsTwoBasicBots_ByDefault()
+        {
+            var console = NewConsole();
+            console.Input.PushTextWithEnter("Ada");
+            console.Input.PushKey(ConsoleKey.Enter);  // keep the default rules
+            console.Input.PushKey(ConsoleKey.Enter);  // chips
+            console.Input.PushKey(ConsoleKey.Enter);  // two bots
+            console.Input.PushKey(ConsoleKey.Enter);  // basic
+            console.Input.PushKey(ConsoleKey.Enter);  // keep the side bets
+            console.Input.PushKey(ConsoleKey.Enter);  // keep the keys
+
+            var settings = TableSetup.Ask(console, 1, KeyBindings.Defaults(), Path.Combine(Path.GetTempPath(), "unused.ini"));
+
+            Assert.Contains("Bot types? (basic, counter, cautious, mimic, gambler, random, or a comma-separated list, one per bot)", console.Output);
+            Assert.Equal(new[] { BotType.Basic, BotType.Basic }, settings.BotTypes);
+        }
+
+        [Fact]
+        public void TableSetup_SkipsTheBotTypes_WithNoBots()
+        {
+            var console = NewConsole();
+            PushSetup(console, bots: "0");
+
+            var settings = TableSetup.Ask(console, 1, KeyBindings.Defaults(), Path.Combine(Path.GetTempPath(), "unused.ini"));
+
+            Assert.DoesNotContain("Bot types?", console.Output);
+            Assert.Empty(settings.BotTypes);
+        }
+
+        [Fact]
+        public void TableSetup_SeatsARandomMix_FixedByTheSeed()
+        {
+            static IReadOnlyList<BotType> Ask(int seed)
+            {
+                var console = NewConsole();
+                PushSetup(console, bots: "6", types: "random");
+                return TableSetup.Ask(console, seed, KeyBindings.Defaults(), Path.Combine(Path.GetTempPath(), "unused.ini")).BotTypes;
+            }
+
+            var mix = Ask(7);
+
+            Assert.Equal(6, mix.Count);
+            Assert.True(mix.Distinct().Count() > 1);
+            Assert.Equal(mix, Ask(7));
+            Assert.NotEqual(mix, Ask(8));
+        }
+
+        [Fact]
+        public void TableSetup_RejectsABadBotList_AndAsksAgain()
+        {
+            var console = NewConsole();
+            console.Input.PushTextWithEnter("Ada");
+            console.Input.PushKey(ConsoleKey.Enter);                    // keep the default rules
+            console.Input.PushKey(ConsoleKey.Enter);                    // chips
+            console.Input.PushTextWithEnter("2");                       // bots
+            console.Input.PushTextWithEnter("wizard");                  // not a type
+            console.Input.PushTextWithEnter("counter, gambler, mimic"); // three for two bots
+            console.Input.PushTextWithEnter("Counter, random");         // one per bot, in any case
+            console.Input.PushKey(ConsoleKey.Enter);                    // keep the side bets
+            console.Input.PushKey(ConsoleKey.Enter);                    // keep the keys
+
+            var settings = TableSetup.Ask(console, 1, KeyBindings.Defaults(), Path.Combine(Path.GetTempPath(), "unused.ini"));
+
+            Assert.Equal(2, Regex.Matches(console.Output, "Name one type for every bot, or one for all of them").Count);
+            Assert.Equal(2, settings.BotTypes.Count);
+            Assert.Equal(BotType.Counter, settings.BotTypes[0]);
+        }
+
+        [Fact]
+        public void App_SeatsTheBotTypesFromSetup_AndSumsThemUpAtCashOut()
+        {
+            var console = NewConsole();
+            PushSetup(console, bots: "2", types: "counter, gambler");
+            PushCashOut(console);
+
+            new BlackjackApp(console, TimeSpan.Zero, 12345).Run();
+
+            var output = console.Output;
+            AssertInOrder(LastFrame(output), "Bot 1", "▼ YOU", "Bot 2", "count", "gambler");
+            AssertInOrder(output, @"\bNet\s+│", @"Bot 1 \(counter\)\s+│\s+±0", @"Bot 2 \(gambler\)\s+│\s+±0", @"Seed\s+│");
+        }
+
+        [Fact]
+        public void App_SumsUpABotThatWentBroke_AndLeft()
+        {
+            // With the minimum in chips each, a round you win and the bot loses sends it off before
+            // the next deal. Neither of you can double or split on a stack of 10, so the round is
+            // only used when the book didn't either.
+            var seed = FirstSeedWhere(bots: 1, round =>
+            {
+                var bot = round.Game.Players.Single(p => p != round.Player);
+                return NeedsAMove(round)
+                    && round.Hand.Outcome == Outcome.Win
+                    && !round.Hand.IsDoubled
+                    && bot.Hands.Count == 1
+                    && !bot.Hands[0].IsDoubled
+                    && bot.Hands[0].Outcome == Outcome.Lose;
+            });
+            var console = NewConsole();
+            PushSetup(console, bots: "1", chips: "10");
+            console.Input.PushKey(ConsoleKey.Spacebar);  // bet the 10
+            console.Input.PushKey(ConsoleKey.S);         // stand
+            PushCashOut(console);
+
+            new BlackjackApp(console, TimeSpan.Zero, seed).Run();
+
+            var output = console.Output;
+            Assert.Contains("Bot 1 is out of chips and leaves the table.", output);
+            Assert.Matches(@"Bot 1 \(basic\)\s+│\s+-10", output);
+            Assert.Matches(@"\bNet\s+│\s+\+10", output);
+        }
+
+        [Fact]
+        public void TableScreen_ShowsEachBotTypeUnderItsName_OnTheShortestTable()
+        {
+            var console = NewConsole(width: 110, height: 16);
+            var rules = new Rules();
+            var human = new Player("Tester", 100m, new BasicStrategyBot());
+            var seats = new List<Player>
+            {
+                new("Bot 1", 100m, new CounterBot(rules)),
+                new("Bot 2", 100m, new GamblerBot(rules, new Random(1))),
+                human,
+                new("Bot 3", 100m, new CautiousBot()),
+                new("Bot 4", 100m, new MimicBot(rules)),
+                new("Bot 5", 100m, new BasicStrategyBot(rules))
+            };
+            var game = new Game(rules, seats, new Shoe(6, 1));
+            var screen = new TableScreen(console, KeyBindings.Defaults(), new FastForward());
+            screen.Seat(game, human, new CardCounter(), new SessionStats(100m), 1);
+            screen.Log("[green]a log line[/]");
+
+            screen.Refresh();
+
+            // The tags sit on their own row under the names, with nothing under your seat even
+            // though it holds the book, and the event row below is still there.
+            var frame = console.Output;
+            AssertInOrder(frame, "Bot 1", "Bot 2", "▼ YOU", "Bot 3", "Bot 4", "Bot 5", @"(?m)^\s*count\s+gambler\s+safe\s+mimic\s+book\s*$", "a log line");
+            AssertFits(frame, 110);
         }
     }
 }

@@ -57,7 +57,7 @@ namespace blackjack.Tests
                 while (game.Phase == Phase.PlayerTurn)
                 {
                     var options = new MoveOptions(game.CanDouble, game.CanSplit, game.CanHit);
-                    switch (game.CurrentPlayer!.Strategy.DecideMove(game.CurrentHand!, game.DealerUpcard!, options))
+                    switch (game.CurrentPlayer!.Strategy.DecideMove(game.CurrentHand!, game.DealerUpcard!, options, Tables.Fresh(game.Rules)))
                     {
                         case Move.Hit:
                             game.Hit();
