@@ -282,7 +282,7 @@ namespace blackjack.Tests
             console.Input.PushTextWithEnter("50");    // penetration
             console.Input.PushKey(ConsoleKey.Enter);  // double on any two
             console.Input.PushKey(ConsoleKey.Enter);  // double after split
-            console.Input.PushKey(ConsoleKey.Enter);  // three hands
+            console.Input.PushKey(ConsoleKey.Enter);  // four hands
             console.Input.PushKey(ConsoleKey.Enter);  // no resplit aces
             console.Input.PushKey(ConsoleKey.Enter);  // no hitting split aces
             console.Input.PushKey(ConsoleKey.Enter);  // split 21 pays even money
@@ -953,7 +953,7 @@ namespace blackjack.Tests
             console.Input.PushTextWithEnter("60");    // penetration
             console.Input.PushTextWithEnter("n");     // double on hard 9 to 11 only
             console.Input.PushKey(ConsoleKey.Enter);  // double after split stays on
-            console.Input.PushTextWithEnter("4");     // hands after splitting
+            console.Input.PushTextWithEnter("2");     // hands after splitting
             console.Input.PushTextWithEnter("y");     // resplit aces
             console.Input.PushKey(ConsoleKey.Enter);  // no hitting split aces
             console.Input.PushTextWithEnter("n");     // a split 21 pays like a blackjack
@@ -973,7 +973,7 @@ namespace blackjack.Tests
             Assert.Equal(0.6m, settings.Rules.Penetration);
             Assert.False(settings.Rules.DoubleOnAnyTwo);
             Assert.True(settings.Rules.DoubleAfterSplit);
-            Assert.Equal(4, settings.Rules.MaxSplitHands);
+            Assert.Equal(2, settings.Rules.MaxSplitHands);
             Assert.True(settings.Rules.ResplitAces);
             Assert.False(settings.Rules.HitSplitAces);
             Assert.False(settings.Rules.SplitBlackjackPaysEven);
