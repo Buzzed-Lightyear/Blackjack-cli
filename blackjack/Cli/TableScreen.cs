@@ -38,6 +38,7 @@ namespace blackjack.Cli
         private Player human = null!;
         private CardCounter counter = null!;
         private SessionStats stats = null!;
+        private int seed;
         private (string Line1, string Line2, BarTone Tone)? bar;
 
         public TableScreen(IAnsiConsole console, KeyBindings keys, FastForward fastForward)
@@ -64,11 +65,14 @@ namespace blackjack.Cli
 
         public static string Name(Player player) => Markup.Escape(player.Name);
 
-        public static string DescribeRules(Rules rules)
+        // The brief form leaves out the payout and the minimum, for a header with no room for them.
+        public static string DescribeRules(Rules rules, bool brief = false)
         {
             var decks = rules.DeckCount == 1 ? "1 deck" : $"{rules.DeckCount} decks";
             var soft17 = rules.DealerHitsSoft17 ? "H17" : "S17";
-            return $"{decks} · {soft17} · pays {Ratio(rules.BlackjackPayout)} · min {Money(rules.MinimumBet)}";
+            return brief
+                ? $"{decks} · {soft17}"
+                : $"{decks} · {soft17} · pays {Ratio(rules.BlackjackPayout)} · min {Money(rules.MinimumBet)}";
         }
 
         // "(hand 2)" when the player holds several hands, otherwise nothing.
@@ -82,12 +86,13 @@ namespace blackjack.Cli
             return card.Rank == Rank.Ace ? "aces" : card.PointValue == 10 ? "tens" : $"{card.PointValue}s";
         }
 
-        public void Seat(Game game, Player human, CardCounter counter, SessionStats stats)
+        public void Seat(Game game, Player human, CardCounter counter, SessionStats stats, int seed)
         {
             this.game = game;
             this.human = human;
             this.counter = counter;
             this.stats = stats;
+            this.seed = seed;
         }
 
         public void Attach(LiveDisplayContext context) => live = context;
@@ -221,20 +226,35 @@ namespace blackjack.Cli
             return new FixedHeight(root, height);
         }
 
+        // The round and the rules on the left; the shoe, its seed and your chips on the right.
         private IRenderable Header()
         {
-            var round = Round > 0 ? $"round {Round} · " : "";
             var onTable = human.Hands.Where(h => h.Outcome is null).Sum(h => h.Bet)
                 + human.SideBets.Where(s => !s.IsResolved).Sum(s => s.Amount)
                 + (game.Phase == Phase.Insurance ? human.Insurance : 0m);
             var net = human.Chips + onTable - stats.StartingChips;
+            var right = $"[grey]shoe {game.ShoeNumber} · seed {seed} ·[/] chips [bold]{Money(human.Chips)}[/] {SignedMoney(net)}";
+
+            // A ten-digit seed and the full rules don't both fit in 80 columns, so the payout and the
+            // minimum (which setup showed, and which never change) make way while the terminal is narrow.
+            var room = console.Profile.Width - Markup.Remove(right).Length - 2;
+            var left = Title(DescribeRules(game.Rules));
+            if (Markup.Remove(left).Length > room)
+            {
+                left = Title(DescribeRules(game.Rules, brief: true));
+            }
 
             return new Grid()
                 .AddColumn(new GridColumn().NoWrap())
                 .AddColumn(new GridColumn().NoWrap().RightAligned())
-                .AddRow(
-                    new Markup($"[bold green]♠ BLACKJACK[/]  [grey]{round}{Markup.Escape(DescribeRules(game.Rules))}[/]"),
-                    new Markup($"chips [bold]{Money(human.Chips)}[/] {SignedMoney(net)}"));
+                .AddRow(new Markup(left), new Markup(right))
+                .Expand();
+        }
+
+        private string Title(string rules)
+        {
+            var round = Round > 0 ? $"round {Round} · " : "";
+            return $"[bold green]♠ BLACKJACK[/]  [grey]{round}{Markup.Escape(rules)}[/]";
         }
 
         private IRenderable Dealer(bool big)

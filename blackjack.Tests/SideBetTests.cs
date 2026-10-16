@@ -195,7 +195,7 @@ namespace blackjack.Tests
         public void BustIt_HouseEdge_DependsOnTheSoft17Rule(bool hitsSoft17, double low, double high)
         {
             var bet = new BustIt();
-            var shoe = new Shoe(6, new Random(2024), 0.75m);
+            var shoe = new Shoe(6, 2024, 0.75m);
             const int hands = 200_000;
             var net = 0m;
 

@@ -43,7 +43,7 @@ namespace blackjack.Engine
                 throw new ArgumentException("A player can only take one seat.", nameof(players));
             }
 
-            this.shoe = shoe ?? new Shoe(rules.DeckCount, new Random(), rules.Penetration);
+            this.shoe = shoe ?? new Shoe(rules.DeckCount, Random.Shared.Next(), rules.Penetration);
             this.sideBets = sideBets ?? Array.Empty<ISideBet>();
         }
 
@@ -72,6 +72,7 @@ namespace blackjack.Engine
         public bool CanDouble => Current is { } turn && Phase == Phase.PlayerTurn && CanDoubleHand(turn.Player, turn.Hand);
         public bool CanSplit => Current is { } turn && Phase == Phase.PlayerTurn && CanSplitHand(turn.Player, turn.Hand);
         public int CardsRemaining => shoe.CardsRemaining;
+        public int ShoeNumber => shoe.ShoeNumber;
         public decimal DecksRemaining => shoe.CardsRemaining / (decimal)Shoe.CardsPerDeck;
 
         public void PlaceBet(Player player, decimal amount)

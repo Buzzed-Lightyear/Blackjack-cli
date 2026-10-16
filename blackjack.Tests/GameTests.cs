@@ -40,6 +40,44 @@ namespace blackjack.Tests
         private static readonly ISideBet TwentyOnePlusThree = SideBets.All[0];
         private static readonly ISideBet BustIt = SideBets.All[1];
 
+        // Plays rounds with every seat on its own strategy, and returns every card the table saw.
+        private static List<Card> PlayRounds(Game game, int rounds)
+        {
+            var seen = new List<Card>();
+            game.CardRevealed += seen.Add;
+            for (var round = 0; round < rounds; round++)
+            {
+                if (game.Phase == Phase.Settled)
+                {
+                    game.NewRound();
+                }
+
+                BetAndDeal(game);
+                DeclineInsurance(game);
+                while (game.Phase == Phase.PlayerTurn)
+                {
+                    var options = new MoveOptions(game.CanDouble, game.CanSplit, game.CanHit);
+                    switch (game.CurrentPlayer!.Strategy.DecideMove(game.CurrentHand!, game.DealerUpcard!, options))
+                    {
+                        case Move.Hit:
+                            game.Hit();
+                            break;
+                        case Move.Double:
+                            game.Double();
+                            break;
+                        case Move.Split:
+                            game.Split();
+                            break;
+                        default:
+                            game.Stand();
+                            break;
+                    }
+                }
+            }
+
+            return seen;
+        }
+
         [Fact]
         public void Deal_GivesEachHandTwoCards_AndKeepsTheHoleCardDown()
         {
@@ -324,6 +362,20 @@ namespace blackjack.Tests
 
             Assert.True(shuffled);
             Assert.Equal(26, player.Hands[0].Value);
+        }
+
+        [Fact]
+        public void SameSeed_DealsTheSameCards_RoundAfterRound()
+        {
+            // One deck cut half way, so ten rounds cross a shuffle or two.
+            var rules = new Rules { DeckCount = 1, Penetration = 0.5m };
+            var a = new Game(rules, new[] { NewPlayer("P1", 1000m), NewPlayer("P2", 1000m) }, new Shoe(1, 99, rules.Penetration));
+            var b = new Game(rules, new[] { NewPlayer("P1", 1000m), NewPlayer("P2", 1000m) }, new Shoe(1, 99, rules.Penetration));
+
+            var dealt = PlayRounds(a, 10);
+
+            Assert.True(a.ShoeNumber > 1);
+            Assert.Equal(dealt, PlayRounds(b, 10));
         }
 
         [Fact]

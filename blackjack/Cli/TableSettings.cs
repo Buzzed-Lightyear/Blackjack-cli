@@ -8,5 +8,6 @@ namespace blackjack.Cli
         decimal Chips,
         int Bots,
         Rules Rules,
-        IReadOnlyList<ISideBet> SideBets);
+        IReadOnlyList<ISideBet> SideBets,
+        int Seed);
 }

@@ -15,7 +15,7 @@ namespace blackjack.Tests
                 .Select(i => new Player($"Bot {i}", 1_000_000m, new BasicStrategyBot(rules)))
                 .ToList();
             var sideBets = new[] { SideBets.All[0], SideBets.All[1] };
-            var game = new Game(rules, bots, new Shoe(rules.DeckCount, new Random(12345), rules.Penetration), sideBets);
+            var game = new Game(rules, bots, new Shoe(rules.DeckCount, 12345, rules.Penetration), sideBets);
 
             var revealedSinceShuffle = new List<Card>();
             var counter = new CardCounter();

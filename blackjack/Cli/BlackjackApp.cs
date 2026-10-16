@@ -12,7 +12,8 @@ namespace blackjack.Cli
     {
         private readonly IAnsiConsole console;
         private readonly TimeSpan pause;
-        private readonly Random random;
+        private readonly int seed;
+        private readonly int firstShoe;
         private readonly KeyBindings keys;
         private readonly string keysPath;
         private readonly IReadOnlyList<string> keyWarnings;
@@ -26,18 +27,21 @@ namespace blackjack.Cli
         private int splitIndex = -1;
         private int splitDealt;
 
-        // pause is how long a bot's move or a dealer's draw stays on screen; zero for tests.
+        // pause is how long a bot's move or a dealer's draw stays on screen; zero for tests. seed is
+        // offered in setup, and the shoes come out from firstShoe.
         public BlackjackApp(
             IAnsiConsole console,
             TimeSpan pause,
-            Random random,
+            int seed,
+            int firstShoe = 1,
             KeyBindings? keys = null,
             string? keysPath = null,
             IReadOnlyList<string>? keyWarnings = null)
         {
             this.console = console;
             this.pause = pause;
-            this.random = random;
+            this.seed = seed;
+            this.firstShoe = firstShoe;
             this.keys = keys ?? KeyBindings.Defaults();
             this.keysPath = keysPath ?? KeyBindings.ResolvePath(null);
             this.keyWarnings = keyWarnings ?? Array.Empty<string>();
@@ -57,20 +61,20 @@ namespace blackjack.Cli
                 console.MarkupLine($"[yellow]{Markup.Escape(warning)}[/]");
             }
 
-            var settings = TableSetup.Ask(console, keys, keysPath);
+            var settings = TableSetup.Ask(console, seed, keys, keysPath);
             var rules = settings.Rules;
 
             var stats = new SessionStats(settings.Chips);
             var screen = new TableScreen(console, keys, fastForward);
             var seat = new ConsoleStrategy(screen, keys, fastForward, stats, rules, settings.SideBets);
             var human = new Player(settings.Name, settings.Chips, seat);
-            var game = new Game(rules, SeatPlayers(human, settings), new Shoe(rules.DeckCount, random, rules.Penetration), settings.SideBets);
+            var game = new Game(rules, SeatPlayers(human, settings), new Shoe(rules.DeckCount, settings.Seed, rules.Penetration, firstShoe), settings.SideBets);
 
             // The counter subscribes first so the table is drawn with the count already updated.
             var counter = new CardCounter();
             game.CardRevealed += counter.OnCardRevealed;
             game.Shuffled += counter.Reset;
-            screen.Seat(game, human, counter, stats);
+            screen.Seat(game, human, counter, stats, settings.Seed);
 
             game.CardRevealed += card => OnCardRevealed(game, screen, human, card);
             game.Shuffled += () =>
@@ -84,7 +88,7 @@ namespace blackjack.Cli
                 }
                 else
                 {
-                    screen.Log("[aqua]The shoe ran out: shuffling a fresh one.[/]");
+                    screen.Log($"[aqua]The shoe ran out: shuffling shoe {game.ShoeNumber}.[/]");
                 }
             };
 
@@ -100,7 +104,7 @@ namespace blackjack.Cli
                     screen.Detach();
                 });
 
-            ShowSummary(human, stats);
+            ShowSummary(human, stats, settings, game);
         }
 
         // Bots fill the seats either side of the player.
@@ -176,7 +180,7 @@ namespace blackjack.Cli
 
                 if (shuffledAfterRound)
                 {
-                    screen.Log("[aqua]Cut card reached: shuffling a fresh shoe.[/]");
+                    screen.Log($"[aqua]Cut card reached: shuffling shoe {game.ShoeNumber}.[/]");
                     shuffledAfterRound = false;
                 }
 
@@ -477,7 +481,7 @@ namespace blackjack.Cli
             fastForward.Stop();
         }
 
-        private void ShowSummary(Player human, SessionStats stats)
+        private void ShowSummary(Player human, SessionStats stats, TableSettings settings, Game game)
         {
             var table = new Table()
                 .Border(TableBorder.Rounded)
@@ -513,11 +517,17 @@ namespace blackjack.Cli
 
             table.AddRow("Started with", TableScreen.Money(stats.StartingChips))
                 .AddRow("Leaving with", TableScreen.Money(human.Chips))
-                .AddRow("Net", TableScreen.SignedMoney(human.Chips - stats.StartingChips));
+                .AddRow("Net", TableScreen.SignedMoney(human.Chips - stats.StartingChips))
+                .AddRow("Seed", settings.Seed.ToString())
+                .AddRow("Shoes", game.ShoeNumber == firstShoe ? firstShoe.ToString() : $"{firstShoe} to {game.ShoeNumber}");
+
+            // The same seed, shoe and setup answers deal the same cards again.
+            var replay = $"dotnet run --project blackjack -- --seed {settings.Seed}" + (firstShoe > 1 ? $" --shoe {firstShoe}" : "");
 
             console.WriteLine();
             console.Write(new Rule("[bold]Cashing out[/]") { Justification = Justify.Left, Style = new Style(Color.Green) });
             console.Write(table);
+            console.MarkupLine($"Replay this session: [bold]{Markup.Escape(replay)}[/]");
             console.MarkupLine($"Thanks for playing, {TableScreen.Name(human)}!");
         }
 
