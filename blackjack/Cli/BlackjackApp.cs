@@ -100,7 +100,7 @@ namespace blackjack.Cli
                 .Start(context =>
                 {
                     screen.Attach(context);
-                    PlayRounds(game, screen, human, seat, stats);
+                    PlayRounds(game, screen, human, seat, stats, counter);
                     screen.Detach();
                 });
 
@@ -117,7 +117,11 @@ namespace blackjack.Cli
             return seats;
         }
 
-        private void PlayRounds(Game game, TableScreen screen, Player human, ConsoleStrategy seat, SessionStats stats)
+        // What a strategy is told about the table when it is asked for a decision.
+        private static TableContext Context(Game game, CardCounter counter) =>
+            new(game.Rules, counter.RunningCount, counter.TrueCount(game.DecksRemaining), game.DecksRemaining);
+
+        private void PlayRounds(Game game, TableScreen screen, Player human, ConsoleStrategy seat, SessionStats stats, CardCounter counter)
         {
             while (true)
             {
@@ -142,7 +146,7 @@ namespace blackjack.Cli
                 var bets = new List<(Player Player, decimal Amount)>();
                 foreach (var player in game.Players)
                 {
-                    var amount = player.Strategy.DecideBet(player.Chips, game.Rules.MinimumBet);
+                    var amount = player.Strategy.DecideBet(player.Chips, Context(game, counter));
                     if (amount > 0m)
                     {
                         bets.Add((player, amount));
@@ -173,9 +177,9 @@ namespace blackjack.Cli
                 }
 
                 game.Deal();
-                OfferInsurance(game, screen, human);
+                OfferInsurance(game, screen, human, counter);
                 AnnounceSideBets(screen, human);
-                PlayTurns(game, screen, human);
+                PlayTurns(game, screen, human, counter);
                 AnnounceResults(game, screen, human, stats);
 
                 if (shuffledAfterRound)
@@ -192,13 +196,13 @@ namespace blackjack.Cli
         }
 
         // With an ace up, each seat answers in turn before the dealer peeks.
-        private void OfferInsurance(Game game, TableScreen screen, Player human)
+        private void OfferInsurance(Game game, TableScreen screen, Player human, CardCounter counter)
         {
             while (game.Phase == Phase.Insurance)
             {
                 var player = game.CurrentPlayer!;
                 var hand = player.Hands[0];
-                if (player.Strategy.DecideInsurance(hand))
+                if (player.Strategy.DecideInsurance(hand, Context(game, counter)))
                 {
                     screen.Log(player == human
                         ? $"You take insurance for {TableScreen.Money(hand.Bet / 2)}."
@@ -224,7 +228,7 @@ namespace blackjack.Cli
             }
         }
 
-        private void PlayTurns(Game game, TableScreen screen, Player human)
+        private void PlayTurns(Game game, TableScreen screen, Player human, CardCounter counter)
         {
             while (game.Phase == Phase.PlayerTurn)
             {
@@ -243,7 +247,7 @@ namespace blackjack.Cli
                 }
 
                 var options = new MoveOptions(game.CanDouble, game.CanSplit, game.CanHit);
-                var move = player.Strategy.DecideMove(hand, game.DealerUpcard!, options);
+                var move = player.Strategy.DecideMove(hand, game.DealerUpcard!, options, Context(game, counter));
                 switch (move)
                 {
                     case Move.Stand:

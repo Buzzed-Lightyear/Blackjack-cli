@@ -46,9 +46,9 @@ namespace blackjack.Cli
 
         // Bets are whole chips, so a balance never has more decimals than the table shows
         // (3:2 and 6:5 on whole bets leave at most one). Returns 0 to cash out.
-        public decimal DecideBet(decimal chips, decimal minBet)
+        public decimal DecideBet(decimal chips, TableContext table)
         {
-            var min = (long)decimal.Ceiling(minBet);
+            var min = (long)decimal.Ceiling(table.Rules.MinimumBet);
             var max = (long)decimal.Floor(Math.Min(chips, long.MaxValue));
             if (max < min)
             {
@@ -57,7 +57,7 @@ namespace blackjack.Cli
 
             if (fastForward.IsActive)
             {
-                return book.DecideBet(chips, minBet);
+                return book.DecideBet(chips, table);
             }
 
             bet = Math.Clamp(bet == 0 ? min : bet, min, max);
@@ -148,12 +148,12 @@ namespace blackjack.Cli
                     else if (keys.Is(KeyAction.FastForward, key))
                     {
                         fastForward.Watch();
-                        return book.DecideBet(chips, minBet);
+                        return book.DecideBet(chips, table);
                     }
                     else if (keys.Is(KeyAction.NextShoe, key))
                     {
                         fastForward.SkipShoe();
-                        return book.DecideBet(chips, minBet);
+                        return book.DecideBet(chips, table);
                     }
                     else if (keys.Is(KeyAction.CashOut, key))
                     {
@@ -169,11 +169,11 @@ namespace blackjack.Cli
             }
         }
 
-        public bool DecideInsurance(Hand hand)
+        public bool DecideInsurance(Hand hand, TableContext table)
         {
             if (fastForward.IsActive)
             {
-                return book.DecideInsurance(hand);
+                return book.DecideInsurance(hand, table);
             }
 
             try
@@ -205,9 +205,9 @@ namespace blackjack.Cli
             }
         }
 
-        public Move DecideMove(Hand hand, Card dealerUpcard, MoveOptions options)
+        public Move DecideMove(Hand hand, Card dealerUpcard, MoveOptions options, TableContext table)
         {
-            var advice = book.DecideMove(hand, dealerUpcard, options);
+            var advice = book.DecideMove(hand, dealerUpcard, options, table);
             if (fastForward.IsActive)
             {
                 return advice;

@@ -39,7 +39,7 @@ namespace blackjack.Tests
                 var chipsBefore = bots.Sum(b => b.Chips);
                 foreach (var bot in bots)
                 {
-                    game.PlaceBet(bot, bot.Strategy.DecideBet(bot.Chips, rules.MinimumBet));
+                    game.PlaceBet(bot, bot.Strategy.DecideBet(bot.Chips, Tables.Fresh(rules)));
                 }
 
                 foreach (var bet in sideBets)
@@ -63,7 +63,7 @@ namespace blackjack.Tests
                 while (game.Phase == Phase.PlayerTurn)
                 {
                     var options = new MoveOptions(game.CanDouble, game.CanSplit, game.CanHit);
-                    switch (game.CurrentPlayer!.Strategy.DecideMove(game.CurrentHand!, game.DealerUpcard!, options))
+                    switch (game.CurrentPlayer!.Strategy.DecideMove(game.CurrentHand!, game.DealerUpcard!, options, Tables.Fresh(rules)))
                     {
                         case Move.Hit:
                             game.Hit();

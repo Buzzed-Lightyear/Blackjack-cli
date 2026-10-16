@@ -32,11 +32,11 @@ namespace blackjack.Tests
 
             public int Decisions { get; private set; }
 
-            public decimal DecideBet(decimal chips, decimal minBet) => minBet;
+            public decimal DecideBet(decimal chips, TableContext table) => table.Rules.MinimumBet;
 
-            public bool DecideInsurance(Hand hand) => false;
+            public bool DecideInsurance(Hand hand, TableContext table) => false;
 
-            public Move DecideMove(Hand hand, Card dealerUpcard, MoveOptions options)
+            public Move DecideMove(Hand hand, Card dealerUpcard, MoveOptions options, TableContext table)
             {
                 Decisions++;
                 var move = moves.Count > 0 ? moves.Dequeue() : Move.Stand;
@@ -83,9 +83,10 @@ namespace blackjack.Tests
 
             game.Deal();
             var insuranceOffered = game.DealerUpcard!.Rank == Rank.Ace;
+            var table = Tables.Fresh(rules);
             while (game.Phase == Phase.Insurance)
             {
-                if (game.CurrentPlayer!.Strategy.DecideInsurance(game.CurrentPlayer.Hands[0]))
+                if (game.CurrentPlayer!.Strategy.DecideInsurance(game.CurrentPlayer.Hands[0], table))
                 {
                     game.TakeInsurance();
                 }
@@ -107,10 +108,10 @@ namespace blackjack.Tests
                 {
                     firstSeen = true;
                     firstOptions = options;
-                    firstAdvice = book.DecideMove(game.CurrentHand!, game.DealerUpcard!, options);
+                    firstAdvice = book.DecideMove(game.CurrentHand!, game.DealerUpcard!, options, table);
                 }
 
-                switch (player.Strategy.DecideMove(game.CurrentHand!, game.DealerUpcard!, options))
+                switch (player.Strategy.DecideMove(game.CurrentHand!, game.DealerUpcard!, options, table))
                 {
                     case Move.Hit:
                         game.Hit();
@@ -769,10 +770,10 @@ namespace blackjack.Tests
             console.Input.PushKey(ConsoleKey.Spacebar);
             console.Input.PushKey(ConsoleKey.Spacebar);
 
-            Assert.Equal(10m, strategy.DecideBet(100m, 10m));  // starts at the minimum
-            Assert.Equal(30m, strategy.DecideBet(100m, 10m));
-            Assert.Equal(20m, strategy.DecideBet(100m, 10m));  // starts from the last bet
-            Assert.Equal(15m, strategy.DecideBet(15.5m, 10m)); // capped at whole chips in hand
+            Assert.Equal(10m, strategy.DecideBet(100m, Tables.Fresh()));  // starts at the minimum
+            Assert.Equal(30m, strategy.DecideBet(100m, Tables.Fresh()));
+            Assert.Equal(20m, strategy.DecideBet(100m, Tables.Fresh()));  // starts from the last bet
+            Assert.Equal(15m, strategy.DecideBet(15.5m, Tables.Fresh())); // capped at whole chips in hand
             Assert.Empty(strategy.SideBetStakes);
             Assert.DoesNotContain("side bet", console.Output);
         }
@@ -794,7 +795,7 @@ namespace blackjack.Tests
             console.Input.PushKey(ConsoleKey.D5);
             console.Input.PushKey(ConsoleKey.Spacebar);
 
-            Assert.Equal(45m, strategy.DecideBet(100m, 10m));
+            Assert.Equal(45m, strategy.DecideBet(100m, Tables.Fresh()));
             Assert.Contains("the minimum is 10", console.Output);
             Assert.Contains("you have 100", console.Output);
         }
@@ -811,7 +812,7 @@ namespace blackjack.Tests
             console.Input.PushKey(ConsoleKey.G);               // Bust It: 10
             console.Input.PushKey(ConsoleKey.Spacebar);
 
-            Assert.Equal(10m, strategy.DecideBet(100m, 10m));
+            Assert.Equal(10m, strategy.DecideBet(100m, Tables.Fresh()));
             Assert.Equal(new[] { (sideBets[0], 10m), (sideBets[1], 10m) }, strategy.SideBetStakes);
             Assert.Contains("T/G side bets", console.Output);
             Assert.Contains("T 21+3 10", console.Output);
@@ -823,14 +824,14 @@ namespace blackjack.Tests
             console.Input.PushKey(ConsoleKey.T);               // 21+3: 20
             console.Input.PushKey(ConsoleKey.Spacebar);
 
-            Assert.Equal(20m, strategy.DecideBet(100m, 10m));
+            Assert.Equal(20m, strategy.DecideBet(100m, Tables.Fresh()));
             Assert.Equal(new[] { (sideBets[0], 20m), (sideBets[1], 10m) }, strategy.SideBetStakes);
 
             // With 35 chips the main bet of 20 leaves 15: the first stake keeps what fits, the
             // second is squeezed out.
             console.Input.PushKey(ConsoleKey.Spacebar);
 
-            Assert.Equal(20m, strategy.DecideBet(35m, 10m));
+            Assert.Equal(20m, strategy.DecideBet(35m, Tables.Fresh()));
             Assert.Equal(new[] { (sideBets[0], 15m) }, strategy.SideBetStakes);
         }
 
@@ -843,10 +844,10 @@ namespace blackjack.Tests
             console.Input.PushKey(ConsoleKey.T);
             console.Input.PushKey(ConsoleKey.F);
 
-            Assert.Equal(10m, strategy.DecideBet(100m, 10m));
+            Assert.Equal(10m, strategy.DecideBet(100m, Tables.Fresh()));
             Assert.True(autopilot.IsActive);
             Assert.Empty(strategy.SideBetStakes);
-            Assert.False(strategy.DecideInsurance(HandOf("10h 7c")));
+            Assert.False(strategy.DecideInsurance(HandOf("10h 7c"), Tables.Fresh()));
         }
 
         [Fact]
@@ -859,7 +860,7 @@ namespace blackjack.Tests
             console.Input.PushKey(ConsoleKey.X);
             console.Input.PushKey(ConsoleKey.X);
 
-            Assert.Equal(0m, strategy.DecideBet(100m, 10m));
+            Assert.Equal(0m, strategy.DecideBet(100m, Tables.Fresh()));
             Assert.Contains("Cash out with 100 chips?", console.Output);
         }
 
@@ -871,15 +872,15 @@ namespace blackjack.Tests
             console.Input.PushKey(ConsoleKey.E);
             console.Input.PushKey(ConsoleKey.F);
 
-            Assert.Equal(10m, strategy.DecideBet(100m, 10m));  // the book bets the minimum
+            Assert.Equal(10m, strategy.DecideBet(100m, Tables.Fresh()));  // the book bets the minimum
             Assert.True(autopilot.IsActive);
             Assert.False(autopilot.SkippingShoes);
-            Assert.Equal(Move.Stand, strategy.DecideMove(HandOf("10h 7c"), C("10s"), new MoveOptions(true, false)));
-            Assert.Equal(Move.Double, strategy.DecideMove(HandOf("6h 5c"), C("10s"), new MoveOptions(true, false)));
+            Assert.Equal(Move.Stand, strategy.DecideMove(HandOf("10h 7c"), C("10s"), new MoveOptions(true, false), Tables.Fresh()));
+            Assert.Equal(Move.Double, strategy.DecideMove(HandOf("6h 5c"), C("10s"), new MoveOptions(true, false), Tables.Fresh()));
 
             autopilot.Stop();
             console.Input.PushKey(ConsoleKey.R);
-            strategy.DecideBet(100m, 10m);
+            strategy.DecideBet(100m, Tables.Fresh());
             Assert.True(autopilot.SkippingShoes);
         }
 
@@ -893,9 +894,9 @@ namespace blackjack.Tests
             console.Input.PushKey(ConsoleKey.B);               // hide the book
             console.Input.PushKey(ConsoleKey.S);
 
-            Assert.Equal(Move.Hit, strategy.DecideMove(HandOf("10h 6c"), C("10s"), new MoveOptions(true, false)));
+            Assert.Equal(Move.Hit, strategy.DecideMove(HandOf("10h 6c"), C("10s"), new MoveOptions(true, false), Tables.Fresh()));
             Assert.Contains("book: hit", console.Output);
-            Assert.Equal(Move.Stand, strategy.DecideMove(HandOf("10h 6c"), C("10s"), new MoveOptions(true, false)));
+            Assert.Equal(Move.Stand, strategy.DecideMove(HandOf("10h 6c"), C("10s"), new MoveOptions(true, false), Tables.Fresh()));
             Assert.False(screen.ShowBook);
 
             screen.Refresh();
@@ -912,7 +913,7 @@ namespace blackjack.Tests
             console.Input.PushKey(ConsoleKey.W);
             var start = console.Output.Length;
 
-            Assert.Equal(Move.Split, strategy.DecideMove(HandOf("8h 8c"), C("6s"), new MoveOptions(true, true)));
+            Assert.Equal(Move.Split, strategy.DecideMove(HandOf("8h 8c"), C("6s"), new MoveOptions(true, true), Tables.Fresh()));
             var offered = console.Output[start..];
             Assert.Contains("A double", offered);
             Assert.Contains("W SPLIT", offered);
@@ -924,7 +925,7 @@ namespace blackjack.Tests
             console.Input.PushKey(ConsoleKey.D);
             start = console.Output.Length;
 
-            Assert.Equal(Move.Hit, strategy.DecideMove(HandOf("8h 8c"), C("6s"), new MoveOptions(false, false)));
+            Assert.Equal(Move.Hit, strategy.DecideMove(HandOf("8h 8c"), C("6s"), new MoveOptions(false, false), Tables.Fresh()));
             var limited = console.Output[start..];
             Assert.DoesNotContain("A double", limited);
             Assert.DoesNotContain("W split", limited);
@@ -934,7 +935,7 @@ namespace blackjack.Tests
             console.Input.PushKey(ConsoleKey.S);
             start = console.Output.Length;
 
-            Assert.Equal(Move.Stand, strategy.DecideMove(HandOf("Ah Ac"), C("6s"), new MoveOptions(false, true, CanHit: false)));
+            Assert.Equal(Move.Stand, strategy.DecideMove(HandOf("Ah Ac"), C("6s"), new MoveOptions(false, true, CanHit: false), Tables.Fresh()));
             var acesOnly = console.Output[start..];
             Assert.DoesNotContain("D hit", acesOnly);
             Assert.Contains("The book says stand on a pair of 8s against a 6.", acesOnly);
