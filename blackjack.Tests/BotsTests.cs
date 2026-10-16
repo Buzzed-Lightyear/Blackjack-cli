@@ -16,17 +16,18 @@ namespace blackjack.Tests
         }
 
         [Theory]
-        [InlineData(BotType.Basic, typeof(BasicStrategyBot), "book")]
-        [InlineData(BotType.Counter, typeof(CounterBot), "count")]
-        [InlineData(BotType.Cautious, typeof(CautiousBot), "safe")]
-        [InlineData(BotType.Mimic, typeof(MimicBot), "mimic")]
-        [InlineData(BotType.Gambler, typeof(GamblerBot), "gambler")]
-        public void Create_BuildsTheType_WhichTypeOfAndTagNameAgain(BotType type, Type strategy, string tag)
+        [InlineData(BotType.Basic, typeof(BasicStrategyBot), "basic", "book")]
+        [InlineData(BotType.Counter, typeof(CounterBot), "counter", "count")]
+        [InlineData(BotType.Cautious, typeof(CautiousBot), "cautious", "safe")]
+        [InlineData(BotType.Mimic, typeof(MimicBot), "mimic", "mimic")]
+        [InlineData(BotType.Gambler, typeof(GamblerBot), "gambler", "gambler")]
+        public void Create_BuildsTheType_WhichTypeOfNameAndTagNameAgain(BotType type, Type strategy, string name, string tag)
         {
             var bot = Bots.Create(type, new Rules(), new Random(1));
 
             Assert.IsType(strategy, bot);
             Assert.Equal(type, Bots.TypeOf(bot));
+            Assert.Equal(name, Bots.Name(type));
             Assert.Equal(tag, Bots.Tag(type));
         }
 

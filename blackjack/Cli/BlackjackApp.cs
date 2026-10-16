@@ -68,7 +68,9 @@ namespace blackjack.Cli
             var screen = new TableScreen(console, keys, fastForward);
             var seat = new ConsoleStrategy(screen, keys, fastForward, stats, rules, settings.SideBets);
             var human = new Player(settings.Name, settings.Chips, seat);
-            var game = new Game(rules, SeatPlayers(human, settings), new Shoe(rules.DeckCount, settings.Seed, rules.Penetration, firstShoe), settings.SideBets);
+            var seats = SeatPlayers(human, settings);
+            var bots = seats.Where(p => p != human).ToList();
+            var game = new Game(rules, seats, new Shoe(rules.DeckCount, settings.Seed, rules.Penetration, firstShoe), settings.SideBets);
 
             // The counter subscribes first so the table is drawn with the count already updated.
             var counter = new CardCounter();
@@ -104,14 +106,15 @@ namespace blackjack.Cli
                     screen.Detach();
                 });
 
-            ShowSummary(human, stats, settings, game);
+            ShowSummary(human, bots, stats, settings, game);
         }
 
-        // Bots fill the seats either side of the player.
+        // Bots fill the seats either side of the player, each playing with its own Random from the
+        // session seed, so the same seed seats the same table.
         private static List<Player> SeatPlayers(Player human, TableSettings settings)
         {
-            var seats = Enumerable.Range(1, settings.Bots)
-                .Select(i => new Player($"Bot {i}", settings.Chips, new BasicStrategyBot(settings.Rules)))
+            var seats = settings.BotTypes
+                .Select((type, i) => new Player($"Bot {i + 1}", settings.Chips, Bots.Create(type, settings.Rules, Bots.RandomFor(settings.Seed, i + 1))))
                 .ToList();
             seats.Insert(seats.Count / 2, human);
             return seats;
@@ -485,7 +488,7 @@ namespace blackjack.Cli
             fastForward.Stop();
         }
 
-        private void ShowSummary(Player human, SessionStats stats, TableSettings settings, Game game)
+        private void ShowSummary(Player human, IReadOnlyList<Player> bots, SessionStats stats, TableSettings settings, Game game)
         {
             var table = new Table()
                 .Border(TableBorder.Rounded)
@@ -521,8 +524,17 @@ namespace blackjack.Cli
 
             table.AddRow("Started with", TableScreen.Money(stats.StartingChips))
                 .AddRow("Leaving with", TableScreen.Money(human.Chips))
-                .AddRow("Net", TableScreen.SignedMoney(human.Chips - stats.StartingChips))
-                .AddRow("Seed", settings.Seed.ToString())
+                .AddRow("Net", TableScreen.SignedMoney(human.Chips - stats.StartingChips));
+
+            // Every bot that sat down, against the stack it started with; a bot that went broke and
+            // left the table is still listed.
+            foreach (var bot in bots)
+            {
+                var kind = Bots.TypeOf(bot.Strategy) is { } type ? $" ({Bots.Name(type)})" : "";
+                table.AddRow($"{TableScreen.Name(bot)}{kind}", TableScreen.SignedMoney(bot.Chips - settings.Chips));
+            }
+
+            table.AddRow("Seed", settings.Seed.ToString())
                 .AddRow("Shoes", game.ShoeNumber == firstShoe ? firstShoe.ToString() : $"{firstShoe} to {game.ShoeNumber}");
 
             // The same seed, shoe and setup answers deal the same cards again.

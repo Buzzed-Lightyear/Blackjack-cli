@@ -22,6 +22,9 @@ namespace blackjack.Strategies
             };
         }
 
+        // The type as setup and the summary spell it: "counter".
+        public static string Name(BotType type) => type.ToString().ToLowerInvariant();
+
         // The short name shown under a bot's seat.
         public static string Tag(BotType type) => type switch
         {
