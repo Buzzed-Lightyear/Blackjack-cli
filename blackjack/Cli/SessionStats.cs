@@ -12,37 +12,62 @@ namespace blackjack.Cli
         }
 
         public decimal StartingChips { get; }
-        public int Rounds { get; private set; }
+        public int Hands { get; private set; }
         public int Wins { get; private set; }
         public int Losses { get; private set; }
         public int Pushes { get; private set; }
         public int Blackjacks { get; private set; }
+        public int Doubles { get; private set; }
+        public int Splits { get; private set; }
+        public int InsuranceTaken { get; private set; }
+        public int SideBetsPlaced { get; private set; }
+        public int SideBetsWon { get; private set; }
+        public decimal SideBetNet { get; private set; }
         public int AutopilotHands { get; private set; }
         public int Decisions { get; private set; }
         public int BookDecisions { get; private set; }
 
-        public void Record(Hand hand)
+        // Tallies a settled round: every hand, the insurance and the side bets.
+        public void Record(Player player)
         {
-            Rounds++;
-            switch (hand.Outcome)
+            foreach (var hand in player.Hands)
             {
-                case Outcome.Blackjack:
-                    Blackjacks++;
-                    Wins++;
-                    break;
-                case Outcome.Win:
-                    Wins++;
-                    break;
-                case Outcome.Push:
-                    Pushes++;
-                    break;
-                case Outcome.Lose:
-                    Losses++;
-                    break;
+                Hands++;
+                if (hand.IsDoubled)
+                {
+                    Doubles++;
+                }
+
+                switch (hand.Outcome)
+                {
+                    case Outcome.Blackjack:
+                        Blackjacks++;
+                        Wins++;
+                        break;
+                    case Outcome.Win:
+                        Wins++;
+                        break;
+                    case Outcome.Push:
+                        Pushes++;
+                        break;
+                    case Outcome.Lose:
+                        Losses++;
+                        break;
+                }
             }
+
+            Splits += Math.Max(0, player.Hands.Count - 1);
+            if (player.Insurance > 0m)
+            {
+                InsuranceTaken++;
+            }
+
+            SideBetsPlaced += player.SideBets.Count;
+            SideBetsWon += player.SideBets.Count(s => s.Result is { Wins: true });
+            SideBetNet += player.SideBetNet;
         }
 
-        public void RecordAutopilot() => AutopilotHands++;
+        public void RecordAutopilot(int hands) => AutopilotHands += hands;
 
         public void RecordDecision(bool followedBook)
         {

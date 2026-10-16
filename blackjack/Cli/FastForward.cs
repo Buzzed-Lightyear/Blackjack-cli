@@ -76,10 +76,10 @@ namespace blackjack.Cli
             }
         }
 
-        public void RecordHand(Hand hand)
+        public void RecordRound(Player player)
         {
-            Hands++;
-            Net += hand.Payout - hand.Bet;
+            Hands += player.Hands.Count;
+            Net += player.RoundNet;
         }
 
         public void Stop()

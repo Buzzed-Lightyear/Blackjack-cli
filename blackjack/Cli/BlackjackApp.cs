@@ -1,5 +1,6 @@
 using blackjack.Domain;
 using blackjack.Engine;
+using blackjack.Engine.SideBets;
 using blackjack.Strategies;
 using Spectre.Console;
 
@@ -18,7 +19,13 @@ namespace blackjack.Cli
         private readonly IReadOnlyList<string> keyWarnings;
         private readonly FastForward fastForward = new();
         private readonly HashSet<Hand> calledNaturals = new();
+        private readonly HashSet<SideBetStake> announcedSideBets = new();
         private bool shuffledAfterRound;
+
+        // While a split is dealt: the index of the hand being split, and how many of the two
+        // cards have landed, so each can be logged against its hand.
+        private int splitIndex = -1;
+        private int splitDealt;
 
         // pause is how long a bot's move or a dealer's draw stays on screen; zero for tests. seed is
         // offered in setup, and the shoes come out from firstShoe.
@@ -59,8 +66,9 @@ namespace blackjack.Cli
 
             var stats = new SessionStats(settings.Chips);
             var screen = new TableScreen(console, keys, fastForward);
-            var human = new Player(settings.Name, settings.Chips, new ConsoleStrategy(screen, keys, fastForward, stats));
-            var game = new Game(rules, SeatPlayers(human, settings), new Shoe(rules.DeckCount, settings.Seed, rules.Penetration, firstShoe));
+            var seat = new ConsoleStrategy(screen, keys, fastForward, stats, rules, settings.SideBets);
+            var human = new Player(settings.Name, settings.Chips, seat);
+            var game = new Game(rules, SeatPlayers(human, settings), new Shoe(rules.DeckCount, settings.Seed, rules.Penetration, firstShoe), settings.SideBets);
 
             // The counter subscribes first so the table is drawn with the count already updated.
             var counter = new CardCounter();
@@ -92,7 +100,7 @@ namespace blackjack.Cli
                 .Start(context =>
                 {
                     screen.Attach(context);
-                    PlayRounds(game, screen, human, stats);
+                    PlayRounds(game, screen, human, seat, stats);
                     screen.Detach();
                 });
 
@@ -103,13 +111,13 @@ namespace blackjack.Cli
         private static List<Player> SeatPlayers(Player human, TableSettings settings)
         {
             var seats = Enumerable.Range(1, settings.Bots)
-                .Select(i => new Player($"Bot {i}", settings.Chips, new BasicStrategyBot()))
+                .Select(i => new Player($"Bot {i}", settings.Chips, new BasicStrategyBot(settings.Rules)))
                 .ToList();
             seats.Insert(seats.Count / 2, human);
             return seats;
         }
 
-        private void PlayRounds(Game game, TableScreen screen, Player human, SessionStats stats)
+        private void PlayRounds(Game game, TableScreen screen, Player human, ConsoleStrategy seat, SessionStats stats)
         {
             while (true)
             {
@@ -153,12 +161,20 @@ namespace blackjack.Cli
                 screen.Round++;
                 screen.ClearLog();
                 calledNaturals.Clear();
+                announcedSideBets.Clear();
                 foreach (var (player, amount) in bets)
                 {
                     game.PlaceBet(player, amount);
                 }
 
+                foreach (var (bet, amount) in seat.SideBetStakes)
+                {
+                    game.PlaceSideBet(human, bet, amount);
+                }
+
                 game.Deal();
+                OfferInsurance(game, screen, human);
+                AnnounceSideBets(screen, human);
                 PlayTurns(game, screen, human);
                 AnnounceResults(game, screen, human, stats);
 
@@ -172,6 +188,39 @@ namespace blackjack.Cli
                 {
                     FinishAutopilotHand(game, screen, human);
                 }
+            }
+        }
+
+        // With an ace up, each seat answers in turn before the dealer peeks.
+        private void OfferInsurance(Game game, TableScreen screen, Player human)
+        {
+            while (game.Phase == Phase.Insurance)
+            {
+                var player = game.CurrentPlayer!;
+                var hand = player.Hands[0];
+                if (player.Strategy.DecideInsurance(hand))
+                {
+                    screen.Log(player == human
+                        ? $"You take insurance for {TableScreen.Money(hand.Bet / 2)}."
+                        : $"{TableScreen.Name(player)} takes insurance.");
+                    game.TakeInsurance();
+                }
+                else
+                {
+                    if (player == human)
+                    {
+                        screen.Log("You decline insurance.");
+                    }
+
+                    game.DeclineInsurance();
+                }
+            }
+
+            if (human.Insurance > 0m)
+            {
+                screen.Log(human.InsurancePayout > 0m
+                    ? $"[bold green]Insurance pays {TableScreen.Money(human.InsurancePayout - human.Insurance)}.[/]"
+                    : "[red]Insurance lost.[/]");
             }
         }
 
@@ -193,16 +242,48 @@ namespace blackjack.Cli
                     screen.Wait(TurnPause);
                 }
 
-                var move = player.Strategy.DecideMove(hand, game.DealerUpcard!);
-                if (move == Move.Stand)
+                var options = new MoveOptions(game.CanDouble, game.CanSplit, game.CanHit);
+                var move = player.Strategy.DecideMove(hand, game.DealerUpcard!, options);
+                switch (move)
                 {
-                    screen.Log($"{Who(player, human)} {(player == human ? "stand" : "stands")} on {hand.Value}.");
-                    game.Stand();
+                    case Move.Stand:
+                        screen.Log($"{Who(player, human)} {(player == human ? "stand" : "stands")} on {hand.Value}{TableScreen.HandTag(player, hand)}.");
+                        game.Stand();
+                        break;
+
+                    case Move.Double:
+                        game.Double();
+                        break;
+
+                    case Move.Split:
+                        Split(game, screen, human, player, hand);
+                        break;
+
+                    default:
+                        game.Hit();
+                        break;
                 }
-                else
-                {
-                    game.Hit();
-                }
+            }
+        }
+
+        private void Split(Game game, TableScreen screen, Player human, Player player, Hand hand)
+        {
+            var aces = hand.Cards[0].Rank == Rank.Ace;
+            screen.Log($"{Who(player, human)} {(player == human ? "split" : "splits")} {TableScreen.PairName(hand)}.");
+            splitIndex = player.Hands.IndexOf(hand);
+            splitDealt = 0;
+            try
+            {
+                game.Split();
+            }
+            finally
+            {
+                splitIndex = -1;
+            }
+
+            if (aces && !game.Rules.HitSplitAces)
+            {
+                screen.Log("[grey]Split aces stand with one card each.[/]");
             }
         }
 
@@ -213,18 +294,48 @@ namespace blackjack.Cli
             {
                 case Phase.PlayerTurn:
                     var player = game.CurrentPlayer!;
+                    if (splitIndex >= 0)
+                    {
+                        var dealt = player.Hands[splitIndex + splitDealt++];
+                        screen.Log($"Hand {splitIndex + splitDealt} draws {CardArt.LogChip(card)} for {dealt.Value}.");
+                        break;
+                    }
+
                     var hand = game.CurrentHand!;
                     var draws = player == human ? "draw" : "draws";
                     var busts = player == human ? "bust" : "busts";
-                    screen.Log(hand.IsBust
-                        ? $"{Who(player, human)} {draws} {CardArt.LogChip(card)} and [red]{busts} with {hand.Value}[/]."
-                        : $"{Who(player, human)} {draws} {CardArt.LogChip(card)} for {hand.Value}.");
+                    var tag = TableScreen.HandTag(player, hand);
+                    if (hand.IsDoubled)
+                    {
+                        var doubles = $"{Who(player, human)} {(player == human ? "double" : "doubles")} to {TableScreen.Money(hand.Bet)}";
+                        screen.Log(hand.IsBust
+                            ? $"{doubles}, {draws} {CardArt.LogChip(card)} and [red]{busts} with {hand.Value}[/]{tag}."
+                            : $"{doubles} and {draws} {CardArt.LogChip(card)} for {hand.Value}{tag}.");
+                    }
+                    else
+                    {
+                        screen.Log(hand.IsBust
+                            ? $"{Who(player, human)} {draws} {CardArt.LogChip(card)} and [red]{busts} with {hand.Value}[/]{tag}."
+                            : $"{Who(player, human)} {draws} {CardArt.LogChip(card)} for {hand.Value}{tag}.");
+                    }
+
                     break;
 
                 case Phase.DealerTurn:
-                    screen.Log(game.DealerHand.Cards.Count == 2
-                        ? $"Dealer turns over {CardArt.LogChip(card)}."
-                        : $"Dealer draws {CardArt.LogChip(card)}.");
+                    if (game.DealerHand.Cards.Count == 2)
+                    {
+                        screen.Log($"Dealer turns over {CardArt.LogChip(card)}.");
+                    }
+                    else
+                    {
+                        if (game.DealerHand.Cards.Count == 3 && !game.Players.Any(p => p.Hands.Any(h => h.Outcome is null)))
+                        {
+                            screen.Log($"[grey]Dealer plays on for {PendingDealerBets(game)}.[/]");
+                        }
+
+                        screen.Log($"Dealer draws {CardArt.LogChip(card)}.");
+                    }
+
                     if (ShowEachCard)
                     {
                         screen.Refresh();
@@ -260,6 +371,18 @@ namespace blackjack.Cli
             }
         }
 
+        // The side bets still waiting on the dealer's hand, by name: "Bust It".
+        private static string PendingDealerBets(Game game)
+        {
+            var names = game.Players
+                .SelectMany(p => p.SideBets)
+                .Where(s => !s.IsResolved && s.Bet.Timing == SideBetTiming.AfterDealer)
+                .Select(s => Markup.Escape(s.Bet.Name))
+                .Distinct()
+                .ToList();
+            return string.Join(" and ", names);
+        }
+
         private void AnnounceResults(Game game, TableScreen screen, Player human, SessionStats stats)
         {
             var dealer = game.DealerHand;
@@ -268,39 +391,81 @@ namespace blackjack.Cli
                 screen.Log(dealer.IsBust ? $"[green]Dealer busts with {dealer.Value}.[/]" : $"Dealer has {dealer.Value}.");
             }
 
-            var hand = human.Hands.FirstOrDefault();
-            if (hand?.Outcome is not { } outcome)
+            var hands = human.Hands;
+            if (hands.Count == 0 || hands.Any(h => h.Outcome is null))
             {
                 return;
             }
 
             if (fastForward.IsActive)
             {
-                stats.RecordAutopilot();
+                stats.RecordAutopilot(hands.Count);
             }
             else
             {
-                stats.Record(hand);
+                stats.Record(human);
             }
 
-            var net = TableScreen.Money(hand.Payout - hand.Bet);
-            screen.Log(outcome switch
+            if (hands.Count == 1)
             {
-                Outcome.Blackjack => $"[bold green]Blackjack pays! You win {net}.[/]",
-                Outcome.Win => $"[bold green]You win {net}.[/]",
-                Outcome.Push => "[bold yellow]Push. Your bet comes back.[/]",
-                _ => $"[bold red]You lose {TableScreen.Money(hand.Bet)}.[/]"
-            });
+                var hand = hands[0];
+                var net = TableScreen.Money(hand.Payout - hand.Bet);
+                screen.Log(hand.Outcome switch
+                {
+                    Outcome.Blackjack => $"[bold green]Blackjack pays! You win {net}.[/]",
+                    Outcome.Win => $"[bold green]You win {net}.[/]",
+                    Outcome.Push => "[bold yellow]Push. Your bet comes back.[/]",
+                    _ => $"[bold red]You lose {TableScreen.Money(hand.Bet)}.[/]"
+                });
+            }
+            else
+            {
+                for (var i = 0; i < hands.Count; i++)
+                {
+                    var hand = hands[i];
+                    var net = TableScreen.Money(Math.Abs(hand.Payout - hand.Bet));
+                    screen.Log(hand.Outcome switch
+                    {
+                        Outcome.Blackjack => $"[bold green]Hand {i + 1} wins {net} at {TableScreen.Money(game.Rules.BlackjackPayout)} to 1.[/]",
+                        Outcome.Win => $"[bold green]Hand {i + 1} wins {net}.[/]",
+                        Outcome.Push => $"[bold yellow]Hand {i + 1} pushes.[/]",
+                        _ => $"[bold red]Hand {i + 1} loses {net}.[/]"
+                    });
+                }
+
+                var total = hands.Sum(h => h.Payout - h.Bet);
+                screen.Log(total switch
+                {
+                    > 0m => $"[bold green]You win {TableScreen.Money(total)} over {hands.Count} hands.[/]",
+                    < 0m => $"[bold red]You lose {TableScreen.Money(-total)} over {hands.Count} hands.[/]",
+                    _ => $"[bold yellow]You break even over {hands.Count} hands.[/]"
+                });
+            }
+
+            AnnounceSideBets(screen, human);
+        }
+
+        // Side bets settle at the deal or after the dealer plays; each is announced once, when it has.
+        private void AnnounceSideBets(TableScreen screen, Player human)
+        {
+            foreach (var stake in human.SideBets)
+            {
+                if (stake.Result is not { } result || !announcedSideBets.Add(stake))
+                {
+                    continue;
+                }
+
+                var name = Markup.Escape(stake.Bet.Name);
+                screen.Log(result.Wins
+                    ? $"[bold green]{name}: {Markup.Escape(result.Label)}, +{TableScreen.Money(stake.Net)}.[/]"
+                    : $"[red]{name} loses ({Markup.Escape(result.Label)}).[/]");
+            }
         }
 
         // Shows the finished hand for a moment, then stops if a key asked to or the shoes are done.
         private void FinishAutopilotHand(Game game, TableScreen screen, Player human)
         {
-            if (human.Hands.FirstOrDefault() is { } hand)
-            {
-                fastForward.RecordHand(hand);
-            }
-
+            fastForward.RecordRound(human);
             screen.Refresh();
             screen.Wait(HandEndPause);
 
@@ -324,9 +489,15 @@ namespace blackjack.Cli
                 .HideHeaders()
                 .AddColumn("")
                 .AddColumn(new TableColumn("").RightAligned())
-                .AddRow("Hands you played", stats.Rounds.ToString())
+                .AddRow("Hands you played", stats.Hands.ToString())
                 .AddRow("Won / lost / pushed", $"{stats.Wins} / {stats.Losses} / {stats.Pushes}")
-                .AddRow("Blackjacks", stats.Blackjacks.ToString());
+                .AddRow("Blackjacks", stats.Blackjacks.ToString())
+                .AddRow("Doubled / split", $"{stats.Doubles} / {stats.Splits}");
+
+            if (stats.InsuranceTaken > 0)
+            {
+                table.AddRow("Insurance taken", stats.InsuranceTaken.ToString());
+            }
 
             if (stats.Decisions > 0)
             {
@@ -336,6 +507,12 @@ namespace blackjack.Cli
             if (stats.AutopilotHands > 0)
             {
                 table.AddRow("Hands on autopilot", stats.AutopilotHands.ToString());
+            }
+
+            if (stats.SideBetsPlaced > 0)
+            {
+                table.AddRow("Side bets", $"{stats.SideBetsPlaced} placed, {stats.SideBetsWon} won")
+                    .AddRow("Side-bet net", TableScreen.SignedMoney(stats.SideBetNet));
             }
 
             table.AddRow("Started with", TableScreen.Money(stats.StartingChips))

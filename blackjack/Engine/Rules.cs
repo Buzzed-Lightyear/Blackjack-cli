@@ -12,6 +12,21 @@ namespace blackjack.Engine
         public decimal Penetration { get; set; } = 0.75m;
         public decimal MinimumBet { get; set; } = 10m;
 
+        // False limits doubling to hard 9, 10 and 11.
+        public bool DoubleOnAnyTwo { get; set; } = true;
+        public bool DoubleAfterSplit { get; set; } = true;
+
+        // How many hands a player can hold after splitting; 1 turns splitting off.
+        public int MaxSplitHands { get; set; } = 4;
+        public bool ResplitAces { get; set; }
+
+        // Split aces normally get one card each and stand.
+        public bool HitSplitAces { get; set; }
+
+        // A two-card 21 after a split is an ordinary 21 unless this is false, when it is paid
+        // like a blackjack if it beats the dealer.
+        public bool SplitBlackjackPaysEven { get; set; } = true;
+
         public void Validate()
         {
             if (DeckCount < 1)
@@ -32,6 +47,11 @@ namespace blackjack.Engine
             if (MinimumBet <= 0m)
             {
                 throw new InvalidOperationException("The minimum bet must be positive.");
+            }
+
+            if (MaxSplitHands < 1)
+            {
+                throw new InvalidOperationException("A player must be able to hold at least one hand.");
             }
         }
     }

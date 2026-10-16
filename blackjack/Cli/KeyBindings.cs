@@ -6,9 +6,14 @@ namespace blackjack.Cli
     {
         Hit,
         Stand,
+        Double,
+        Split,
         Deal,
         BetDown,
         BetUp,
+        SideBet1,
+        SideBet2,
+        Insurance,
         FastForward,
         NextShoe,
         CashOut,
@@ -130,8 +135,9 @@ namespace blackjack.Cli
         // Keys only have to be unique among actions read at the same moment.
         private static readonly KeyAction[][] Contexts =
         {
-            new[] { KeyAction.Deal, KeyAction.BetDown, KeyAction.BetUp, KeyAction.FastForward, KeyAction.NextShoe, KeyAction.CashOut, KeyAction.Book, KeyAction.Count },
-            new[] { KeyAction.Hit, KeyAction.Stand, KeyAction.Book, KeyAction.Count },
+            new[] { KeyAction.Deal, KeyAction.BetDown, KeyAction.BetUp, KeyAction.SideBet1, KeyAction.SideBet2, KeyAction.FastForward, KeyAction.NextShoe, KeyAction.CashOut, KeyAction.Book, KeyAction.Count },
+            new[] { KeyAction.Hit, KeyAction.Stand, KeyAction.Double, KeyAction.Split, KeyAction.Book, KeyAction.Count },
+            new[] { KeyAction.Insurance, KeyAction.Deal, KeyAction.Book, KeyAction.Count },
             new[] { KeyAction.Slower, KeyAction.Faster, KeyAction.NextShoe, KeyAction.Book, KeyAction.Count },
         };
 
@@ -142,15 +148,21 @@ namespace blackjack.Cli
             this.keys = keys;
         }
 
-        // Everything sits under the left hand: home row for your move, Q/E either side for
-        // less/more, the thumb on Space to deal.
+        // Everything sits under the left hand: home row for your move, with A and W beside and
+        // above it for double and split, Q/E either side for less/more, T/G for the side bets,
+        // Z for insurance (the deal key declines), the thumb on Space to deal.
         public static KeyBindings Defaults() => new(new Dictionary<KeyAction, KeyChord[]>
         {
             [KeyAction.Hit] = Chords("D"),
             [KeyAction.Stand] = Chords("S"),
+            [KeyAction.Double] = Chords("A"),
+            [KeyAction.Split] = Chords("W"),
             [KeyAction.Deal] = Chords("Space"),
             [KeyAction.BetDown] = Chords("Q"),
             [KeyAction.BetUp] = Chords("E"),
+            [KeyAction.SideBet1] = Chords("T"),
+            [KeyAction.SideBet2] = Chords("G"),
+            [KeyAction.Insurance] = Chords("Z"),
             [KeyAction.FastForward] = Chords("F"),
             [KeyAction.NextShoe] = Chords("R"),
             [KeyAction.CashOut] = Chords("X"),
@@ -164,6 +176,8 @@ namespace blackjack.Cli
         {
             KeyAction.BetDown => "bet_down",
             KeyAction.BetUp => "bet_up",
+            KeyAction.SideBet1 => "side_bet_1",
+            KeyAction.SideBet2 => "side_bet_2",
             KeyAction.FastForward => "fast_forward",
             KeyAction.NextShoe => "next_shoe",
             KeyAction.CashOut => "cash_out",
@@ -174,9 +188,14 @@ namespace blackjack.Cli
         {
             KeyAction.Hit => "hit",
             KeyAction.Stand => "stand",
-            KeyAction.Deal => "deal (place your bet)",
+            KeyAction.Double => "double down",
+            KeyAction.Split => "split a pair",
+            KeyAction.Deal => "deal (place your bet, or decline insurance)",
             KeyAction.BetDown => "lower your bet",
             KeyAction.BetUp => "raise your bet",
+            KeyAction.SideBet1 => "add to the first side bet",
+            KeyAction.SideBet2 => "add to the second side bet",
+            KeyAction.Insurance => "take insurance",
             KeyAction.FastForward => "autopilot (the book plays your seat)",
             KeyAction.NextShoe => "skip to the next shoe",
             KeyAction.CashOut => "cash out",
@@ -317,8 +336,9 @@ namespace blackjack.Cli
                 }
             }
 
-            Group("your turn", KeyAction.Hit, KeyAction.Stand);
-            Group("between hands", KeyAction.Deal, KeyAction.BetDown, KeyAction.BetUp, KeyAction.FastForward, KeyAction.NextShoe, KeyAction.CashOut);
+            Group("your turn", KeyAction.Hit, KeyAction.Stand, KeyAction.Double, KeyAction.Split);
+            Group("between hands", KeyAction.Deal, KeyAction.BetDown, KeyAction.BetUp, KeyAction.SideBet1, KeyAction.SideBet2, KeyAction.FastForward, KeyAction.NextShoe, KeyAction.CashOut);
+            Group("when the dealer shows an ace (the deal key declines)", KeyAction.Insurance);
             Group("whenever the game is waiting for you", KeyAction.Book, KeyAction.Count);
             Group("while on autopilot (any other key stops it)", KeyAction.Slower, KeyAction.Faster);
 

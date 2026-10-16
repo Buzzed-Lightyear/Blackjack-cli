@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using blackjack.Domain;
 using blackjack.Engine;
+using blackjack.Engine.SideBets;
 using Spectre.Console;
 using Spectre.Console.Rendering;
 
@@ -20,12 +21,13 @@ namespace blackjack.Cli
     internal sealed class TableScreen
     {
         private const int CountWidth = 26;
-        private const int InfoWidth = 16;
+        private const int InfoWidth = 22;
         private const int MinHeight = 16;
         private const int MaxHeight = 34;
         private const int BigLayoutHeight = 23;
         private const int MaxEvents = 40;
         private static readonly TimeSpan WaitSlice = TimeSpan.FromMilliseconds(15);
+        private static readonly KeyAction[] SideBetKeys = { KeyAction.SideBet1, KeyAction.SideBet2 };
 
         private readonly IAnsiConsole console;
         private readonly KeyBindings keys;
@@ -53,6 +55,9 @@ namespace blackjack.Cli
         // The stake shown in your seat while you choose it.
         public long? PendingBet { get; set; }
 
+        // The side-bet stakes being chosen, one per bet the table offers, shown with their keys.
+        public IReadOnlyList<long>? PendingSideBets { get; set; }
+
         public static string Money(decimal amount) => amount.ToString("0.##");
 
         public static string SignedMoney(decimal amount) =>
@@ -68,6 +73,17 @@ namespace blackjack.Cli
             return brief
                 ? $"{decks} · {soft17}"
                 : $"{decks} · {soft17} · pays {Ratio(rules.BlackjackPayout)} · min {Money(rules.MinimumBet)}";
+        }
+
+        // "(hand 2)" when the player holds several hands, otherwise nothing.
+        public static string HandTag(Player player, Hand hand) =>
+            player.Hands.Count > 1 ? $" (hand {player.Hands.IndexOf(hand) + 1})" : "";
+
+        // What a pair is called when it is split: "8s", "tens", "aces".
+        public static string PairName(Hand hand)
+        {
+            var card = hand.Cards[0];
+            return card.Rank == Rank.Ace ? "aces" : card.PointValue == 10 ? "tens" : $"{card.PointValue}s";
         }
 
         public void Seat(Game game, Player human, CardCounter counter, SessionStats stats, int seed)
@@ -100,6 +116,8 @@ namespace blackjack.Cli
         public void ClearBar() => bar = null;
 
         public string Key(KeyAction action) => $"[bold]{Markup.Escape(keys.Label(action))}[/]";
+
+        public string HandTag(Hand hand) => HandTag(human, hand);
 
         public string Toggles() =>
             $"[grey]{Key(KeyAction.Book)} book {OnOff(ShowBook)} · {Key(KeyAction.Count)} count {OnOff(ShowCount)}[/]";
@@ -202,7 +220,7 @@ namespace blackjack.Cli
                 new Layout("events", Events(eventRows)).Size(eventRows),
                 new Layout("bar", Bar()).Size(4));
             root["you"].SplitColumns(
-                new Layout("seat", YourSeat(big)),
+                new Layout("seat", YourSeat(big, youRows - 2)),
                 new Layout("count", Count()).Size(CountWidth));
 
             return new FixedHeight(root, height);
@@ -211,7 +229,9 @@ namespace blackjack.Cli
         // The round and the rules on the left; the shoe, its seed and your chips on the right.
         private IRenderable Header()
         {
-            var onTable = human.Hands.Where(h => h.Outcome is null).Sum(h => h.Bet);
+            var onTable = human.Hands.Where(h => h.Outcome is null).Sum(h => h.Bet)
+                + human.SideBets.Where(s => !s.IsResolved).Sum(s => s.Amount)
+                + (game.Phase == Phase.Insurance ? human.Insurance : 0m);
             var net = human.Chips + onTable - stats.StartingChips;
             var right = $"[grey]shoe {game.ShoeNumber} · seed {seed} ·[/] chips [bold]{Money(human.Chips)}[/] {SignedMoney(net)}";
 
@@ -313,80 +333,104 @@ namespace blackjack.Cli
                 return new Markup($"[black on yellow] ▶ {Name(seat)} [/]");
             }
 
-            var done = seat.Hands.FirstOrDefault() is { } hand && (hand.Outcome is not null || hand.IsStood);
+            var done = seat.Hands.Count > 0 && seat.Hands.All(h => h.Outcome is not null || h.IsStood);
             return new Markup(done ? $"[grey]{Name(seat)}[/]" : $"[bold]{Name(seat)}[/]");
         }
 
+        // Split hands sit side by side: 8♠ 3♦ | 8♥ 10♣.
         private IRenderable SeatCards(Player seat)
         {
-            var hand = seat.Hands.FirstOrDefault();
-            if (seat == human || hand is null)
+            if (seat == human || seat.Hands.Count == 0)
             {
                 return new Text("");
             }
 
-            return new Markup(string.Join(" ", hand.Cards.Select(CardArt.Chip)));
+            return new Markup(string.Join(" [grey]|[/] ", seat.Hands.Select(h => string.Join(" ", h.Cards.Select(CardArt.Chip)))));
         }
 
         private IRenderable SeatStatus(Player seat)
         {
-            var hand = seat.Hands.FirstOrDefault();
             if (seat == human)
             {
                 return new Text("");
             }
 
-            if (hand is null)
+            if (seat.Hands.Count == 0)
             {
                 return new Markup(game.Phase == Phase.Betting ? "" : "[grey]sitting out[/]");
             }
 
-            if (hand.Outcome is { } outcome)
-            {
-                return new Markup($"{Total(hand)}  {OutcomeShort(hand, outcome)}");
-            }
-
-            if (IsActing(seat))
-            {
-                return new Markup($"{Total(hand)}  [yellow]thinking…[/]");
-            }
-
-            return new Markup(hand.IsStood ? $"{Total(hand)}  [grey]stood[/]" : Total(hand));
+            return new Markup(string.Join(" [grey]|[/] ", seat.Hands.Select(HandStatus)));
         }
 
-        private IRenderable YourSeat(bool big)
+        private string HandStatus(Hand hand)
         {
-            var hand = human.Hands.FirstOrDefault();
-            var (header, colour) = SeatHeader(hand);
-
-            IRenderable cards;
-            if (hand is null || hand.Cards.Count == 0)
+            if (hand.Outcome is { } outcome)
             {
-                cards = new Markup(game.Phase == Phase.Betting && hand is null ? "[grey]place your bet[/]" : "");
+                return $"{Total(hand)}  {OutcomeShort(hand, outcome)}";
+            }
+
+            if (hand == game.CurrentHand)
+            {
+                return $"{Total(hand)}  [yellow]thinking…[/]";
+            }
+
+            return hand.IsStood ? $"{Total(hand)}  [grey]stood[/]" : Total(hand);
+        }
+
+        // One hand shows as tiles beside a column of figures. Several hands, or a hand too long
+        // for tiles, go one per line with the figures underneath. rows is what the panel can show.
+        private IRenderable YourSeat(bool big, int rows)
+        {
+            var hands = human.Hands;
+            var (header, colour) = SeatHeader(hands);
+            var room = (console.Profile.Width - CountWidth - InfoWidth - 6) / (CardArt.TileWidth + 1);
+            var tiles = big && hands.Count == 1 && hands[0].Cards.Count <= room;
+
+            IRenderable body;
+            if (hands.Count == 0 || tiles || (hands.Count == 1 && hands[0].Cards.Count == 0))
+            {
+                var hand = hands.FirstOrDefault();
+                IRenderable cards = hand is null || hand.Cards.Count == 0
+                    ? new Markup(game.Phase == Phase.Betting && hand is null ? "[grey]place your bet[/]" : "")
+                    : new Markup(CardArt.Row(hand.Cards.Select(CardArt.Tile)));
+
+                var info = new List<string>();
+                if (hand is not null && hand.Cards.Count > 0)
+                {
+                    info.Add(YourTotal(hand));
+                }
+
+                info.Add(PendingBet is { } pending
+                    ? $"next bet [bold yellow]{pending}[/]"
+                    : hand is not null ? $"bet [bold]{Money(hand.Bet)}[/]" : "");
+                info.AddRange(SideBetLines(wide: false));
+                info.Add($"[grey]chips {Money(human.Chips)}[/]");
+
+                body = new Grid()
+                    .AddColumn(new GridColumn())
+                    .AddColumn(new GridColumn().Width(InfoWidth).NoWrap())
+                    .AddRow(cards, new Markup(string.Join("\n", info.Take(rows))));
             }
             else
             {
-                var room = (console.Profile.Width - CountWidth - InfoWidth - 6) / (CardArt.TileWidth + 1);
-                cards = big && hand.Cards.Count <= room
-                    ? new Markup(CardArt.Row(hand.Cards.Select(CardArt.Tile)))
-                    : new Markup(string.Join(" ", hand.Cards.Select(CardArt.Chip)));
+                var lines = hands.Select(h => HandLine(h, hands.Count > 1)).ToList();
+                if (PendingBet is { } pending)
+                {
+                    lines.Add($"next bet [bold yellow]{pending}[/]");
+                }
+
+                // The side bets share a line when it fits the panel.
+                var sideBets = SideBetLines(wide: true).ToList();
+                var together = string.Join(" · ", sideBets);
+                if (sideBets.Count > 0)
+                {
+                    lines.AddRange(Markup.Remove(together).Length <= console.Profile.Width - CountWidth - 4 ? new[] { together } : sideBets);
+                }
+
+                lines.Add($"[grey]chips {Money(human.Chips)}[/]");
+                body = new Markup(string.Join("\n", lines.Take(rows)));
             }
-
-            var info = new List<string>();
-            if (hand is not null && hand.Cards.Count > 0)
-            {
-                info.Add(YourTotal(hand));
-            }
-
-            info.Add(PendingBet is { } pending
-                ? $"next bet [bold yellow]{pending}[/]"
-                : hand is not null ? $"bet [bold]{Money(hand.Bet)}[/]" : "");
-            info.Add($"[grey]chips {Money(human.Chips)}[/]");
-
-            var body = new Grid()
-                .AddColumn(new GridColumn())
-                .AddColumn(new GridColumn().Width(InfoWidth).NoWrap())
-                .AddRow(cards, new Markup(string.Join("\n", info)));
 
             return new Panel(body)
                 .Header(header)
@@ -395,27 +439,90 @@ namespace blackjack.Cli
                 .Expand();
         }
 
-        private (string Header, Color Colour) SeatHeader(Hand? hand)
+        private string HandLine(Hand hand, bool several)
         {
-            if (hand?.Outcome is { } outcome)
+            var marker = !several ? "" : hand == game.CurrentHand ? "[bold yellow]▶[/] " : "  ";
+            var cards = string.Join(" ", hand.Cards.Select(CardArt.Chip));
+            var tail = hand.Outcome is { } outcome ? OutcomeLabel(hand, outcome).Text : $"bet [bold]{Money(hand.Bet)}[/]";
+            return $"{marker}{cards}  {YourTotal(hand)}  {tail}";
+        }
+
+        // Your side bets: the stakes being chosen with their keys, or this round's stakes and how
+        // they came out. The wide form has room for the winning hand's name.
+        private IEnumerable<string> SideBetLines(bool wide)
+        {
+            if (PendingSideBets is { } pending)
             {
-                var net = Money(Math.Abs(hand.Payout - hand.Bet));
-                return outcome switch
+                for (var i = 0; i < Math.Min(pending.Count, game.SideBets.Count); i++)
                 {
-                    Outcome.Blackjack => ($" [bold green]BLACKJACK +{net}[/] ", Color.Green),
-                    Outcome.Win => ($" [bold green]WIN +{net}[/] ", Color.Green),
-                    Outcome.Push => (" [bold yellow]PUSH[/] ", Color.Yellow),
-                    _ when hand.IsBust => ($" [bold red]BUST -{net}[/] ", Color.Red),
-                    _ => ($" [bold red]LOSE -{net}[/] ", Color.Red)
+                    yield return $"{Key(SideBetKeys[i])} {Markup.Escape(game.SideBets[i].Name)} [bold yellow]{pending[i]}[/]";
+                }
+
+                yield break;
+            }
+
+            foreach (var stake in human.SideBets)
+            {
+                var name = Markup.Escape(stake.Bet.Name);
+                if (stake.Result is not { } result)
+                {
+                    yield return $"{name} [bold]{Money(stake.Amount)}[/]";
+                }
+                else if (wide)
+                {
+                    yield return $"{name} [grey]{Markup.Escape(result.Label)}[/] {SignedMoney(stake.Net)}";
+                }
+                else
+                {
+                    yield return $"{name} {SignedMoney(stake.Net)}";
+                }
+            }
+        }
+
+        private (string Header, Color Colour) SeatHeader(List<Hand> hands)
+        {
+            if (hands.Count == 1 && hands[0].Outcome is { } outcome)
+            {
+                var (text, colour) = OutcomeLabel(hands[0], outcome);
+                return ($" {text} ", colour);
+            }
+
+            if (hands.Count > 1 && hands.All(h => h.Outcome is not null))
+            {
+                var net = hands.Sum(h => h.Payout - h.Bet);
+                return net switch
+                {
+                    > 0m => ($" [bold green]{hands.Count} HANDS +{Money(net)}[/] ", Color.Green),
+                    < 0m => ($" [bold red]{hands.Count} HANDS -{Money(-net)}[/] ", Color.Red),
+                    _ => ($" [bold yellow]{hands.Count} HANDS PUSH[/] ", Color.Yellow)
                 };
             }
 
-            if (hand is not null && hand == game.CurrentHand)
+            if (game.Phase == Phase.Insurance && game.CurrentPlayer == human)
             {
-                return (" [bold yellow]YOUR MOVE[/] ", Color.Yellow);
+                return (" [bold yellow]INSURANCE?[/] ", Color.Yellow);
+            }
+
+            if (game.CurrentHand is { } current && hands.Contains(current))
+            {
+                var which = hands.Count > 1 ? $" · HAND {hands.IndexOf(current) + 1} OF {hands.Count}" : "";
+                return ($" [bold yellow]YOUR MOVE{which}[/] ", Color.Yellow);
             }
 
             return ($" [aqua]YOU · {Name(human)}[/] ", Color.Aqua);
+        }
+
+        private static (string Text, Color Colour) OutcomeLabel(Hand hand, Outcome outcome)
+        {
+            var net = Money(Math.Abs(hand.Payout - hand.Bet));
+            return outcome switch
+            {
+                Outcome.Blackjack => ($"[bold green]BLACKJACK +{net}[/]", Color.Green),
+                Outcome.Win => ($"[bold green]WIN +{net}[/]", Color.Green),
+                Outcome.Push => ("[bold yellow]PUSH[/]", Color.Yellow),
+                _ when hand.IsBust => ($"[bold red]BUST -{net}[/]", Color.Red),
+                _ => ($"[bold red]LOSE -{net}[/]", Color.Red)
+            };
         }
 
         private static string YourTotal(Hand hand)
@@ -489,6 +596,7 @@ namespace blackjack.Cli
         {
             var line = game.Phase switch
             {
+                Phase.Insurance when game.CurrentPlayer is { } asked && asked != human => $"[grey]{Name(asked)} is offered insurance…[/]",
                 Phase.PlayerTurn when game.CurrentPlayer is { } player && player != human => $"[grey]{Name(player)} is playing…[/]",
                 Phase.DealerTurn => "[grey]Dealer's turn…[/]",
                 Phase.Betting when game.Players.Any(p => p.Hands.Count > 0) => "[grey]Dealing…[/]",
@@ -510,7 +618,7 @@ namespace blackjack.Cli
         }
 
         private bool IsActing(Player seat) =>
-            game.Phase == Phase.PlayerTurn && game.CurrentPlayer == seat;
+            game.Phase is Phase.PlayerTurn or Phase.Insurance && game.CurrentPlayer == seat;
 
         private static string Total(Hand hand)
         {
