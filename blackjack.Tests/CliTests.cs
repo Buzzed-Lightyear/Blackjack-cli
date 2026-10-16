@@ -1200,7 +1200,8 @@ namespace blackjack.Tests
         [Fact]
         public void TableScreen_ShowsEachBotTypeUnderItsName_OnTheShortestTable()
         {
-            var console = NewConsole(width: 110, height: 16);
+            // Seventeen rows is the shortest table with a row for the tags; at sixteen it goes.
+            var console = NewConsole(width: 110, height: 17);
             var rules = new Rules();
             var human = new Player("Tester", 100m, new BasicStrategyBot());
             var seats = new List<Player>

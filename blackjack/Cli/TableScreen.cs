@@ -17,23 +17,23 @@ namespace blackjack.Cli
 
     // The whole table on one screen, top to bottom: header, dealer, the other seats in seat order,
     // your seat beside the count, the latest events, and a bar that always says what the keys do
-    // right now. Every region keeps its size, so nothing moves between frames, and inside a live
-    // display each frame is drawn over the last instead of clearing the screen.
+    // right now. The frame fills the terminal, TableLayout decides how, and every region keeps its
+    // size while the terminal does, so nothing moves between frames; inside a live display each
+    // frame is drawn over the last instead of clearing the screen. A resize is noticed while the
+    // table waits, and the next frame starts from a cleared screen.
     internal sealed class TableScreen
     {
-        private const int CountWidth = 26;
         private const int InfoWidth = 22;
-        private const int MinHeight = 17;
-        private const int MaxHeight = 34;
-        private const int BigLayoutHeight = 23;
         private const int MaxEvents = 40;
         private static readonly TimeSpan WaitSlice = TimeSpan.FromMilliseconds(15);
+        private static readonly TimeSpan SizePoll = TimeSpan.FromMilliseconds(50);
         private static readonly KeyAction[] SideBetKeys = { KeyAction.SideBet1, KeyAction.SideBet2 };
 
         private readonly IAnsiConsole console;
         private readonly KeyBindings keys;
         private readonly FastForward fastForward;
         private readonly List<string> events = new();
+        private readonly Func<Player, string>[] seatRows;
         private LiveDisplayContext? live;
         private Game game = null!;
         private Player human = null!;
@@ -42,11 +42,15 @@ namespace blackjack.Cli
         private int seed;
         private (string Line1, string Line2, BarTone Tone)? bar;
 
+        // The console size the last frame was built for.
+        private (int Width, int Height)? drawn;
+
         public TableScreen(IAnsiConsole console, KeyBindings keys, FastForward fastForward)
         {
             this.console = console;
             this.keys = keys;
             this.fastForward = fastForward;
+            seatRows = new Func<Player, string>[] { SeatName, SeatTag, SeatCards, SeatStatus };
         }
 
         public int Round { get; set; }
@@ -125,21 +129,40 @@ namespace blackjack.Cli
 
         public void Refresh()
         {
+            // A live display only redraws the lines of its last frame, so after a resize the rest of
+            // the screen would keep pieces of the old one: the next frame starts from a clear screen.
+            var resized = Resized;
             var frame = Build();
+            if (resized)
+            {
+                console.Clear(true);
+            }
+
             if (live is null)
             {
                 console.Write(frame);
-                return;
             }
-
-            live.UpdateTarget(frame);
-            live.Refresh();
+            else
+            {
+                live.UpdateTarget(frame);
+            }
         }
 
+        // Watches the terminal size while the key is awaited; the read is a task so that the wait
+        // can be interrupted for a redraw, and the test console's completes at once.
         public ConsoleKeyInfo ReadKey()
         {
             Refresh();
-            return console.Input.ReadKey(intercept: true)
+            var pending = console.Input.ReadKeyAsync(intercept: true, CancellationToken.None);
+            while (Task.WaitAny(new Task[] { pending }, SizePoll) < 0)
+            {
+                if (Resized)
+                {
+                    Refresh();
+                }
+            }
+
+            return pending.GetAwaiter().GetResult()
                 ?? throw new InvalidOperationException("No console input is available.");
         }
 
@@ -191,7 +214,7 @@ namespace blackjack.Cli
                     }
                 }
 
-                if (changed)
+                if (changed || Resized)
                 {
                     Refresh();
                 }
@@ -206,29 +229,58 @@ namespace blackjack.Cli
             }
         }
 
+        // The size the last frame was built for is checked against the terminal's size now.
+        private bool Resized =>
+            drawn is { } last && (last.Width != console.Profile.Width || last.Height != console.Profile.Height);
+
         public IRenderable Build()
         {
-            var height = Math.Clamp(console.Profile.Height - 1, MinHeight, MaxHeight);
-            var big = height >= BigLayoutHeight;
-            var (dealerRows, seatRows, youRows) = big ? (5, 5, 7) : (2, 4, 5);
-            var eventRows = height - 1 - dealerRows - seatRows - youRows - 4;
+            var width = console.Profile.Width;
+            var height = console.Profile.Height;
+            drawn = (width, height);
+
+            var layout = new TableLayout(width, height, game.Players.Count, seatRows.Length);
+            if (layout.TooSmall)
+            {
+                return new FixedHeight(TooSmall(width, height), height);
+            }
 
             var root = new Layout("table").SplitRows(
-                new Layout("header", Header()).Size(1),
-                new Layout("dealer", Dealer(big)).Size(dealerRows),
-                new Layout("seats", Seats()).Size(seatRows),
-                new Layout("you").Size(youRows),
-                new Layout("events", Events(eventRows)).Size(eventRows),
-                new Layout("bar", Bar()).Size(4));
-            root["you"].SplitColumns(
-                new Layout("seat", YourSeat(big, youRows - 2)),
-                new Layout("count", Count()).Size(CountWidth));
+                new Layout("header", Header(width)).Size(TableLayout.HeaderRows),
+                new Layout("dealer", Dealer(layout.TileHeight)).Size(layout.DealerRows),
+                new Layout("seats", Seats(layout)).Size(layout.SeatRows * layout.SeatLines),
+                new Layout("you").Size(layout.YouRows),
+                new Layout("events", Events(layout.EventRows)).Size(layout.EventRows),
+                new Layout("bar", Bar()).Size(TableLayout.BarRows));
+            if (layout.CountPanel)
+            {
+                root["you"].SplitColumns(
+                    new Layout("seat", YourSeat(layout)),
+                    new Layout("count", Count(layout.PanelRows - 2)).Size(TableLayout.CountWidth));
+            }
+            else
+            {
+                root["you"].SplitRows(
+                    new Layout("seat", YourSeat(layout)).Size(layout.PanelRows),
+                    new Layout("count", CountLine()).Size(1));
+            }
 
             return new FixedHeight(root, height);
         }
 
-        // The round and the rules on the left; the shoe, its seed and your chips on the right.
-        private IRenderable Header()
+        // Shown in place of the table while the terminal can't hold one; keys are still read, so
+        // the player can make it bigger or cash out.
+        private static IRenderable TooSmall(int width, int height) =>
+            Align.Center(
+                new Rows(
+                    new Markup("[bold red]Terminal too small[/]"),
+                    new Markup($"[grey]Blackjack needs {TableLayout.MinWidth}×{TableLayout.MinHeight}, this is {width}×{height}[/]")),
+                VerticalAlignment.Middle);
+
+        // The round and the rules on the left; the shoe, its seed and your chips on the right. The
+        // rules make way for the rest as the terminal narrows: first the payout and the minimum
+        // (which setup showed, and which never change), then the rules altogether.
+        private IRenderable Header(int width)
         {
             var onTable = human.Hands.Where(h => h.Outcome is null).Sum(h => h.Bet)
                 + human.SideBets.Where(s => !s.IsResolved).Sum(s => s.Amount)
@@ -236,47 +288,39 @@ namespace blackjack.Cli
             var net = human.Chips + onTable - stats.StartingChips;
             var right = $"[grey]shoe {game.ShoeNumber} · seed {seed} ·[/] chips [bold]{Money(human.Chips)}[/] {SignedMoney(net)}";
 
-            // A ten-digit seed and the full rules don't both fit in 80 columns, so the payout and the
-            // minimum (which setup showed, and which never change) make way while the terminal is narrow.
-            var room = console.Profile.Width - Markup.Remove(right).Length - 2;
-            var left = Title(DescribeRules(game.Rules));
-            if (Markup.Remove(left).Length > room)
-            {
-                left = Title(DescribeRules(game.Rules, brief: true));
-            }
-
-            return new Grid()
-                .AddColumn(new GridColumn().NoWrap())
-                .AddColumn(new GridColumn().NoWrap().RightAligned())
-                .AddRow(new Markup(left), new Markup(right))
-                .Expand();
+            var room = width - Markup.Remove(right).Length - 2;
+            var titles = new[] { Title(DescribeRules(game.Rules)), Title(DescribeRules(game.Rules, brief: true)), Title(null) };
+            var left = titles.FirstOrDefault(title => Markup.Remove(title).Length <= room) ?? "[bold green]♠ BLACKJACK[/]";
+            var gap = Math.Max(2, width - Markup.Remove(left).Length - Markup.Remove(right).Length);
+            return new Line($"{left}{new string(' ', gap)}{right}");
         }
 
-        private string Title(string rules)
+        private string Title(string? rules)
         {
-            var round = Round > 0 ? $"round {Round} · " : "";
-            return $"[bold green]♠ BLACKJACK[/]  [grey]{round}{Markup.Escape(rules)}[/]";
+            var parts = new[] { Round > 0 ? $"round {Round}" : null, rules is null ? null : Markup.Escape(rules) };
+            return $"[bold green]♠ BLACKJACK[/]  [grey]{string.Join(" · ", parts.Where(p => p is not null))}[/]";
         }
 
-        private IRenderable Dealer(bool big)
+        // tileHeight is 0 for one-line chips.
+        private IRenderable Dealer(int tileHeight)
         {
             var hand = game.DealerHand;
             var label = game.Phase == Phase.DealerTurn ? "[black on yellow] DEALER [/]" : "[bold]DEALER[/]";
             var total = DealerTotal();
 
-            if (!big)
+            if (tileHeight == 0)
             {
                 var chips = hand.Cards.Count == 0
                     ? DealerWaiting()
                     : string.Join(" ", hand.Cards.Select((c, i) => i == 1 && !game.HoleCardRevealed ? CardArt.HiddenChip : CardArt.Chip(c)));
-                return new Markup($"{label}  {chips}  {total}").Centered();
+                return new Line($"{label}  {chips}  {total}", Justify.Center);
             }
 
             IRenderable cards = hand.Cards.Count == 0
-                ? new Markup($"\n{DealerWaiting()}\n")
-                : new Markup(CardArt.Row(hand.Cards.Select((c, i) => i == 1 && !game.HoleCardRevealed ? CardArt.Back() : CardArt.Tile(c))));
+                ? new Markup($"{new string('\n', (tileHeight - 1) / 2)}{DealerWaiting()}")
+                : new Markup(CardArt.Row(hand.Cards.Select((c, i) => i == 1 && !game.HoleCardRevealed ? CardArt.Back(tileHeight) : CardArt.Tile(c, tileHeight))));
 
-            return new Rows(new Markup(label).Centered(), Align.Center(cards), new Markup(total).Centered());
+            return new Rows(new Line(label, Justify.Center), Align.Center(cards), new Line(total, Justify.Center));
         }
 
         private string DealerWaiting() =>
@@ -304,10 +348,23 @@ namespace blackjack.Cli
             return hand.IsBust ? $"[bold green]BUST {hand.Value}[/]" : $"[bold]{Total(hand)}[/]";
         }
 
-        // The other seats in the order they act, with a marker where you sit.
-        private IRenderable Seats()
+        // The seats in the order they act, with a marker where you sit: one grid, or two when the
+        // terminal is narrow, with the first half of the seats above the rest. Each grid row comes
+        // from one of seatRows, so a row can be added under the names without touching the rest.
+        private IRenderable Seats(TableLayout layout)
         {
             var seats = game.Players;
+            if (!layout.TwoSeatRows)
+            {
+                return SeatGrid(seats, layout);
+            }
+
+            var half = (seats.Count + 1) / 2;
+            return new Rows(SeatGrid(seats.Take(half).ToList(), layout), SeatGrid(seats.Skip(half).ToList(), layout));
+        }
+
+        private IRenderable SeatGrid(IReadOnlyList<Player> seats, TableLayout layout)
+        {
             var width = Math.Max(8, console.Profile.Width / seats.Count - 2);
             var grid = new Grid();
             foreach (var _ in seats)
@@ -315,58 +372,63 @@ namespace blackjack.Cli
                 grid.AddColumn(new GridColumn().Width(width).NoWrap().PadRight(2));
             }
 
-            grid.AddRow(seats.Select(SeatName).ToArray());
-            grid.AddRow(seats.Select(SeatTag).ToArray());
-            grid.AddRow(seats.Select(SeatCards).ToArray());
-            grid.AddRow(seats.Select(SeatStatus).ToArray());
+            foreach (var row in SeatRowsFor(layout))
+            {
+                grid.AddRow(seats.Select(seat => new Line(row(seat))).ToArray());
+            }
+
             return grid;
         }
 
-        private IRenderable SeatName(Player seat)
+        private string SeatName(Player seat)
         {
             var active = IsActing(seat);
             if (seat == human)
             {
-                return new Markup(active ? "[black on yellow] ▼ YOU [/]" : "[bold aqua]▼ YOU[/]");
+                return active ? "[black on yellow] ▼ YOU [/]" : "[bold aqua]▼ YOU[/]";
             }
 
             if (active)
             {
-                return new Markup($"[black on yellow] ▶ {Name(seat)} [/]");
+                return $"[black on yellow] ▶ {Name(seat)} [/]";
             }
 
             var done = seat.Hands.Count > 0 && seat.Hands.All(h => h.Outcome is not null || h.IsStood);
-            return new Markup(done ? $"[grey]{Name(seat)}[/]" : $"[bold]{Name(seat)}[/]");
+            return done ? $"[grey]{Name(seat)}[/]" : $"[bold]{Name(seat)}[/]";
         }
 
         // A bot's type under its name; nothing under yours.
-        private IRenderable SeatTag(Player seat) =>
-            seat != human && Bots.TypeOf(seat.Strategy) is { } type ? new Markup($"[grey]{Bots.Tag(type)}[/]") : new Text("");
+        private string SeatTag(Player seat) =>
+            seat != human && Bots.TypeOf(seat.Strategy) is { } type ? $"[grey]{Bots.Tag(type)}[/]" : "";
+
+        // The tag row is the one the layout drops when the terminal has no row for it.
+        private IEnumerable<Func<Player, string>> SeatRowsFor(TableLayout layout) =>
+            layout.SeatLines == seatRows.Length ? seatRows : seatRows.Where(row => row != SeatTag);
 
         // Split hands sit side by side: 8♠ 3♦ | 8♥ 10♣.
-        private IRenderable SeatCards(Player seat)
+        private string SeatCards(Player seat)
         {
             if (seat == human || seat.Hands.Count == 0)
             {
-                return new Text("");
+                return "";
             }
 
-            return new Markup(string.Join(" [grey]|[/] ", seat.Hands.Select(h => string.Join(" ", h.Cards.Select(CardArt.Chip)))));
+            return string.Join(" [grey]|[/] ", seat.Hands.Select(h => string.Join(" ", h.Cards.Select(CardArt.Chip))));
         }
 
-        private IRenderable SeatStatus(Player seat)
+        private string SeatStatus(Player seat)
         {
             if (seat == human)
             {
-                return new Text("");
+                return "";
             }
 
             if (seat.Hands.Count == 0)
             {
-                return new Markup(game.Phase == Phase.Betting ? "" : "[grey]sitting out[/]");
+                return game.Phase == Phase.Betting ? "" : "[grey]sitting out[/]";
             }
 
-            return new Markup(string.Join(" [grey]|[/] ", seat.Hands.Select(HandStatus)));
+            return string.Join(" [grey]|[/] ", seat.Hands.Select(HandStatus));
         }
 
         private string HandStatus(Hand hand)
@@ -385,13 +447,14 @@ namespace blackjack.Cli
         }
 
         // One hand shows as tiles beside a column of figures. Several hands, or a hand too long
-        // for tiles, go one per line with the figures underneath. rows is what the panel can show.
-        private IRenderable YourSeat(bool big, int rows)
+        // for tiles, go one per line with the figures underneath; the panel shows what fits its rows.
+        private IRenderable YourSeat(TableLayout layout)
         {
             var hands = human.Hands;
+            var rows = layout.PanelRows - 2;
             var (header, colour) = SeatHeader(hands);
-            var room = (console.Profile.Width - CountWidth - InfoWidth - 6) / (CardArt.TileWidth + 1);
-            var tiles = big && hands.Count == 1 && hands[0].Cards.Count <= room;
+            var room = (layout.PanelWidth - InfoWidth - 6) / (CardArt.TileWidth + 1);
+            var tiles = layout.TileHeight > 0 && hands.Count == 1 && hands[0].Cards.Count <= room;
 
             IRenderable body;
             if (hands.Count == 0 || tiles || (hands.Count == 1 && hands[0].Cards.Count == 0))
@@ -399,7 +462,7 @@ namespace blackjack.Cli
                 var hand = hands.FirstOrDefault();
                 IRenderable cards = hand is null || hand.Cards.Count == 0
                     ? new Markup(game.Phase == Phase.Betting && hand is null ? "[grey]place your bet[/]" : "")
-                    : new Markup(CardArt.Row(hand.Cards.Select(CardArt.Tile)));
+                    : new Markup(CardArt.Row(hand.Cards.Select(c => CardArt.Tile(c, layout.TileHeight))));
 
                 var info = new List<string>();
                 if (hand is not null && hand.Cards.Count > 0)
@@ -416,7 +479,7 @@ namespace blackjack.Cli
                 body = new Grid()
                     .AddColumn(new GridColumn())
                     .AddColumn(new GridColumn().Width(InfoWidth).NoWrap())
-                    .AddRow(cards, new Markup(string.Join("\n", info.Take(rows))));
+                    .AddRow(cards, Lines(info.Take(rows)));
             }
             else
             {
@@ -431,11 +494,11 @@ namespace blackjack.Cli
                 var together = string.Join(" · ", sideBets);
                 if (sideBets.Count > 0)
                 {
-                    lines.AddRange(Markup.Remove(together).Length <= console.Profile.Width - CountWidth - 4 ? new[] { together } : sideBets);
+                    lines.AddRange(Markup.Remove(together).Length <= layout.PanelWidth - 4 ? new[] { together } : sideBets);
                 }
 
                 lines.Add($"[grey]chips {Money(human.Chips)}[/]");
-                body = new Markup(string.Join("\n", lines.Take(rows)));
+                body = Lines(lines.Take(rows));
             }
 
             return new Panel(body)
@@ -546,24 +609,47 @@ namespace blackjack.Cli
             return $"[bold]{(hand.IsSoft && hand.Value < 21 ? $"soft {hand.Value}" : hand.Value.ToString())}[/]";
         }
 
-        private IRenderable Count()
+        // The count beside your seat; the shoe bar goes when the panel has no row for it.
+        private IRenderable Count(int rows)
         {
-            string body;
+            var lines = new List<string>();
             if (!ShowCount)
             {
-                body = $"[grey]hidden\n{Key(KeyAction.Count)} to show[/]";
+                lines.Add("[grey]hidden[/]");
+                lines.Add($"[grey]{Key(KeyAction.Count)} to show[/]");
             }
             else
             {
-                var trueCount = counter.TrueCount(game.DecksRemaining);
-                var colour = trueCount >= 2m ? "green" : trueCount <= -1m ? "red" : "white";
-                body = $"running  [bold]{counter.RunningCount:+0;-0;0}[/]\n"
-                    + $"true     [bold {colour}]{trueCount:+0.0;-0.0;0.0}[/]\n"
-                    + $"decks    {game.DecksRemaining:0.0} left\n"
-                    + ShoeBar();
+                lines.Add($"running  [bold]{counter.RunningCount:+0;-0;0}[/]");
+                lines.Add($"true     [bold {TrueCountColour()}]{counter.TrueCount(game.DecksRemaining):+0.0;-0.0;0.0}[/]");
+                lines.Add($"decks    {game.DecksRemaining:0.0} left");
+                if (rows >= 4)
+                {
+                    lines.Add(ShoeBar());
+                }
             }
 
-            return new Panel(new Markup(body)).Header(" Hi-Lo ").BorderColor(Color.Grey).Expand();
+            return new Panel(Lines(lines)).Header(" Hi-Lo ").BorderColor(Color.Grey).Expand();
+        }
+
+        // The count on one line under your seat, for a terminal too narrow for the panel.
+        private IRenderable CountLine()
+        {
+            if (!ShowCount)
+            {
+                return new Line($"[grey]Hi-Lo hidden · {Key(KeyAction.Count)} to show[/]");
+            }
+
+            return new Line(
+                $"[grey]Hi-Lo[/] running [bold]{counter.RunningCount:+0;-0;0}[/] · "
+                + $"true [bold {TrueCountColour()}]{counter.TrueCount(game.DecksRemaining):+0.0;-0.0;0.0}[/] · "
+                + $"{game.DecksRemaining:0.0} decks");
+        }
+
+        private string TrueCountColour()
+        {
+            var trueCount = counter.TrueCount(game.DecksRemaining);
+            return trueCount >= 2m ? "green" : trueCount <= -1m ? "red" : "white";
         }
 
         // How far through the shoe the deal is, with the cut card marked.
@@ -578,11 +664,11 @@ namespace blackjack.Cli
             return $"[grey]{string.Concat(cells)} {100 * dealt / total}%[/]";
         }
 
+        // The last events that fit, newest at the bottom.
         private IRenderable Events(int rows)
         {
-            var shown = events.TakeLast(Math.Max(rows, 0)).ToList();
-            var lines = shown.Select((line, i) => i == shown.Count - 1 ? $"[bold]›[/] {line}" : $"  [grey]{line}[/]");
-            return new Markup(string.Join("\n", lines));
+            var shown = events.TakeLast(rows).ToList();
+            return Lines(shown.Select((line, i) => i == shown.Count - 1 ? $"[bold]›[/] {line}" : $"  [grey]{line}[/]"));
         }
 
         private IRenderable Bar()
@@ -595,8 +681,10 @@ namespace blackjack.Cli
                 _ => Color.Grey
             };
 
-            return new Panel(new Markup($"{line1}\n{line2}")).Border(BoxBorder.Heavy).BorderColor(colour).Expand();
+            return new Panel(Lines(new[] { line1, line2 })).Border(BoxBorder.Heavy).BorderColor(colour).Expand();
         }
+
+        private static IRenderable Lines(IEnumerable<string> lines) => new Rows(lines.Select(line => new Line(line)));
 
         private (string, string, BarTone) WaitingBar()
         {
