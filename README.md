@@ -23,16 +23,29 @@ Setup asks for your name, whether to change the table rules (decks, minimum bet,
 blackjack payout, penetration, the doubling and splitting rules, and the shuffle seed, which starts
 out as the session's seed), your starting chips, how many bots to seat, whether to change the side
 bets, and whether to change the keys. Every question has a
-default, so Enter all the way through starts a game. The game wants a terminal at least 80 by 24;
-taller ones get bigger cards.
+default, so Enter all the way through starts a game. The game needs a terminal of at least 60×16
+and is best at 80×24 or more; it fills whatever it gets, and follows a resize mid-game.
 
 ## The table
 
-The header shows the round and the rules on the left, and the shoe in play, its seed and your
-chips on the right; on an 80-column terminal the payout and minimum make way for them. The dealer
-is under it. Below are the other seats in the order they act, with a `▼ YOU` marker where you
-sit. Your seat is the panel at the bottom with the count beside it, then the last few
-things that happened, then a bar that always says what the keys do right now.
+The table fills the terminal. The header shows the round and the rules on the left, and the shoe
+in play, its seed and your chips on the right; as the terminal narrows the payout and minimum make
+way for them, then the rest of the rules. The dealer is under it, with one-line chips on fewer
+than 23 rows, three-line card tiles from 23 rows and five-line tiles from 36. Below are the other
+seats in the order they act, with a `▼ YOU` marker where you sit; under 90 columns a table with
+more than three bots wraps onto two rows of seats, when the height leaves a line for the log. Your
+seat is the panel at the bottom, taller with the tiles, with the Hi-Lo count in a panel beside it
+or, under 70 columns, on one line below it (`Hi-Lo running +3 · true +1.2 · 4.5 decks`). Then
+come the latest events, as many as there are rows left, then a bar that always says what the keys
+do right now. A line that would not fit its region is cut short with `…` rather than wrapped, so
+on a narrow terminal the bar's hints get shorter but the keys still work.
+
+Every region's size depends only on the terminal size and the number of seats, never on the cards
+or the log, so nothing moves between frames; what does not fit a region is cropped inside it.
+Resize the terminal whenever you like: the table notices while it waits for a key or animates a
+deal, and redraws from a clear screen at the new size. Below 60 columns or 16 rows it makes way
+for `Terminal too small` with the size it needs; keys are still read, so make the window bigger
+or cash out with `X` twice.
 
 Default keys, all under the left hand:
 
@@ -141,8 +154,10 @@ key also declines insurance, so it can't double as the insurance key.
 - `blackjack/Engine/SideBets`: `ISideBet` and the six bets, `SideBets.All`, `SideBetStake`
 - `blackjack/Strategies`: `IPlayerStrategy`, `Move`, `MoveOptions`, `BasicStrategyBot` (the full
   multi-deck book, built for the table's rules)
-- `blackjack/Cli`: the Spectre.Console front end: `TableScreen` draws the table, `ConsoleStrategy`
-  is your seat, `FastForward` is the autopilot, `KeyBindings` reads `keys.ini`
+- `blackjack/Cli`: the Spectre.Console front end: `TableScreen` draws the table and follows
+  resizes, `TableLayout` shares the rows and columns out for a terminal size, `Line` is a line
+  of markup that is cut rather than wrapped, `CardArt` draws the cards, `ConsoleStrategy` is your
+  seat, `FastForward` is the autopilot, `KeyBindings` reads `keys.ini`
 - `blackjack.Tests`: xUnit tests, using a stacked shoe to rig hands; the side-bet house edges are
   checked by exact enumeration of a six-deck shoe
 
