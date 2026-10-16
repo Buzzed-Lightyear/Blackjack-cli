@@ -38,7 +38,7 @@ namespace blackjack.Engine
                 throw new ArgumentException("A player can only take one seat.", nameof(players));
             }
 
-            this.shoe = shoe ?? new Shoe(rules.DeckCount, new Random(), rules.Penetration);
+            this.shoe = shoe ?? new Shoe(rules.DeckCount, Random.Shared.Next(), rules.Penetration);
         }
 
         // Raised for every card the table can see, after it lands in its hand.
@@ -58,6 +58,7 @@ namespace blackjack.Engine
         public Player? CurrentPlayer => Phase == Phase.PlayerTurn ? turns[turn].Player : null;
         public Hand? CurrentHand => Phase == Phase.PlayerTurn ? turns[turn].Hand : null;
         public int CardsRemaining => shoe.CardsRemaining;
+        public int ShoeNumber => shoe.ShoeNumber;
         public decimal DecksRemaining => shoe.CardsRemaining / (decimal)Shoe.CardsPerDeck;
 
         public void PlaceBet(Player player, decimal amount)

@@ -13,7 +13,7 @@ namespace blackjack.Tests
             var bots = Enumerable.Range(1, 5)
                 .Select(i => new Player($"Bot {i}", 1_000_000m, new BasicStrategyBot()))
                 .ToList();
-            var game = new Game(rules, bots, new Shoe(rules.DeckCount, new Random(12345), rules.Penetration));
+            var game = new Game(rules, bots, new Shoe(rules.DeckCount, 12345, rules.Penetration));
 
             var revealedSinceShuffle = new List<Card>();
             var counter = new CardCounter();

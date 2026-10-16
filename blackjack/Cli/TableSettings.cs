@@ -6,5 +6,6 @@ namespace blackjack.Cli
         string Name,
         decimal Chips,
         int Bots,
-        Rules Rules);
+        Rules Rules,
+        int Seed);
 }

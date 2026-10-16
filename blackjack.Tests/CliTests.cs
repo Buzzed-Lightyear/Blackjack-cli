@@ -37,7 +37,7 @@ namespace blackjack.Tests
                 .ToList();
             seats.Insert(seats.Count / 2, human);
 
-            var game = new Game(rules, seats, new Shoe(rules.DeckCount, new Random(seed), rules.Penetration));
+            var game = new Game(rules, seats, new Shoe(rules.DeckCount, seed, rules.Penetration));
             var shuffledAtTheEnd = false;
             game.Shuffled += () => shuffledAtTheEnd = game.Phase == Phase.Settled;
 
@@ -129,7 +129,7 @@ namespace blackjack.Tests
             console.Input.PushKey(ConsoleKey.S);         // stand
             PushCashOut(console);
 
-            new BlackjackApp(console, TimeSpan.Zero, new Random(seed)).Run();
+            new BlackjackApp(console, TimeSpan.Zero, seed).Run();
 
             var output = console.Output;
             Assert.Contains("PLACE YOUR BET", output);
@@ -152,7 +152,7 @@ namespace blackjack.Tests
             console.Input.PushKey(ConsoleKey.S);         // stand (unread if the dealer has blackjack)
             console.Input.PushKey(ConsoleKey.Z);         // on to the summary
 
-            new BlackjackApp(console, TimeSpan.Zero, new Random(seed)).Run();
+            new BlackjackApp(console, TimeSpan.Zero, seed).Run();
 
             Assert.Contains("You don't have enough chips", console.Output);
             Assert.Contains("Thanks for playing, Tester!", console.Output);
@@ -166,7 +166,7 @@ namespace blackjack.Tests
             PushSetup(console);
             console.Input.PushKey(ConsoleKey.Spacebar);  // deal
             console.Input.PushKey(ConsoleKey.S);         // typed ahead, before the cards come out
-            var app = new BlackjackApp(console, TimeSpan.FromMilliseconds(4), new Random(seed));
+            var app = new BlackjackApp(console, TimeSpan.FromMilliseconds(4), seed);
 
             // The early S is thrown away during the deal animation, so the move is left waiting for a key.
             var error = Assert.Throws<InvalidOperationException>(app.Run);
@@ -183,7 +183,7 @@ namespace blackjack.Tests
             console.Input.PushKey(ConsoleKey.Spacebar);
             PushCashOut(console);
 
-            new BlackjackApp(console, TimeSpan.Zero, new Random(seed)).Run();
+            new BlackjackApp(console, TimeSpan.Zero, seed).Run();
 
             AssertInOrder(LastFrame(console.Output), "You have blackjack!", "Dealer turns over", @"Blackjack pays! You win 15\.");
             Assert.DoesNotContain("Tester has blackjack", console.Output);
@@ -203,6 +203,7 @@ namespace blackjack.Tests
             console.Input.PushKey(ConsoleKey.Enter);  // dealer stands on soft 17
             console.Input.PushKey(ConsoleKey.Enter);  // 3:2
             console.Input.PushTextWithEnter("50");    // penetration
+            console.Input.PushKey(ConsoleKey.Enter);  // keep the seed
             console.Input.PushKey(ConsoleKey.Enter);  // 1000 chips
             console.Input.PushTextWithEnter("6");     // bots
             console.Input.PushKey(ConsoleKey.Enter);  // keep the keys
@@ -210,12 +211,12 @@ namespace blackjack.Tests
             console.Input.PushKey(ConsoleKey.S);
             PushCashOut(console);
 
-            new BlackjackApp(console, TimeSpan.Zero, new Random(seed)).Run();
+            new BlackjackApp(console, TimeSpan.Zero, seed).Run();
 
             // The count already shows the fresh shoe, and the shuffle note follows the results.
             var frame = LastFrame(console.Output);
             Assert.Matches(@"running\s+0\b", frame);
-            AssertInOrder(frame, "Dealer (has|busts)", "You (win|lose)|Push", @"Cut card reached: shuffling a fresh shoe\.");
+            AssertInOrder(frame, "Dealer (has|busts)", "You (win|lose)|Push", @"Cut card reached: shuffling shoe 2\.");
         }
 
         [Fact]
@@ -228,7 +229,7 @@ namespace blackjack.Tests
             console.Input.PushKey(ConsoleKey.S);         // stand where the book hits
             PushCashOut(console);
 
-            new BlackjackApp(console, TimeSpan.Zero, new Random(seed)).Run();
+            new BlackjackApp(console, TimeSpan.Zero, seed).Run();
 
             Assert.Contains("The book says hit on", console.Output);
             Assert.Matches(@"Followed the book\s+│\s+0 of 1 moves", console.Output);
@@ -243,7 +244,7 @@ namespace blackjack.Tests
             console.Input.PushKey(ConsoleKey.Z);         // any key: stop after this hand
             PushCashOut(console);
 
-            new BlackjackApp(console, TimeSpan.Zero, new Random(1)).Run();
+            new BlackjackApp(console, TimeSpan.Zero, 1).Run();
 
             var output = console.Output;
             Assert.Contains("AUTOPILOT", output);
@@ -262,13 +263,68 @@ namespace blackjack.Tests
             test.Input.PushKey(ConsoleKey.R);            // skip to the next shoe
             PushCashOut(test);
 
-            new BlackjackApp(console, TimeSpan.Zero, new Random(3)).Run();
+            new BlackjackApp(console, TimeSpan.Zero, 3).Run();
 
             var frame = LastFrame(console.Output);
             Assert.Contains("Fresh shoe. The autopilot played", frame);
             Assert.Matches(@"running\s+0\b", frame);
             Assert.Matches(@"decks\s+6\.0 left", frame);
             Assert.Contains("SKIPPING TO THE NEXT SHOE", console.Output);
+        }
+
+        [Fact]
+        public void App_ShowsTheSeedAndShoe_AndTheCommandThatReplaysThem()
+        {
+            var console = NewConsole();
+            PushSetup(console);
+            PushCashOut(console);
+
+            new BlackjackApp(console, TimeSpan.Zero, 12345).Run();
+
+            var output = console.Output;
+            Assert.Contains("shoe 1 · seed 12345", output);
+            Assert.Matches(@"Seed\s+│\s+12345\b", output);
+            Assert.Matches(@"Shoes\s+│\s+1\b", output);
+            Assert.Contains("Replay this session: dotnet run --project blackjack -- --seed 12345", output);
+            Assert.DoesNotContain("--shoe", output);
+        }
+
+        [Fact]
+        public void App_UsesTheSeedChosenInSetup()
+        {
+            var console = NewConsole();
+            console.Input.PushTextWithEnter("Tester");
+            console.Input.PushTextWithEnter("y");         // change the rules
+            for (var i = 0; i < 5; i++)
+            {
+                console.Input.PushKey(ConsoleKey.Enter);  // decks, minimum, soft 17, payout, penetration
+            }
+
+            console.Input.PushTextWithEnter("424242");    // the seed
+            console.Input.PushKey(ConsoleKey.Enter);      // 1000 chips
+            console.Input.PushTextWithEnter("0");         // bots
+            console.Input.PushKey(ConsoleKey.Enter);      // keep the keys
+            PushCashOut(console);
+
+            new BlackjackApp(console, TimeSpan.Zero, 1).Run();
+
+            Assert.Contains("shoe 1 · seed 424242", console.Output);
+            Assert.Contains("-- --seed 424242", console.Output);
+        }
+
+        [Fact]
+        public void App_CanStartAtALaterShoe()
+        {
+            var console = NewConsole();
+            PushSetup(console);
+            PushCashOut(console);
+
+            new BlackjackApp(console, TimeSpan.Zero, 12345, firstShoe: 2).Run();
+
+            var output = console.Output;
+            Assert.Contains("shoe 2 · seed 12345", output);
+            Assert.Matches(@"Shoes\s+│\s+2\b", output);
+            Assert.Contains("-- --seed 12345 --shoe 2", output);
         }
 
         [Fact]
@@ -282,7 +338,7 @@ namespace blackjack.Tests
             var counter = new CardCounter();
             game.CardRevealed += counter.OnCardRevealed;
             var screen = new TableScreen(console, KeyBindings.Defaults(), new FastForward());
-            screen.Seat(game, human, counter, new SessionStats(100m));
+            screen.Seat(game, human, counter, new SessionStats(100m), 1);
             screen.Log("[green]a log line[/]");
 
             string Frame()
@@ -329,7 +385,7 @@ namespace blackjack.Tests
             var human = new Player("Tester", 100m, new BasicStrategyBot());
             var game = new Game(new Rules(), new[] { human }, Shoe.Stacked(Of("10h 5s 6c 4d")));
             var screen = new TableScreen(console, KeyBindings.Defaults(), new FastForward());
-            screen.Seat(game, human, new CardCounter(), new SessionStats(100m));
+            screen.Seat(game, human, new CardCounter(), new SessionStats(100m), 1);
             game.PlaceBet(human, 10m);
             game.Deal();
 
@@ -346,18 +402,22 @@ namespace blackjack.Tests
             var human = new Player("Tester", 100m, new BasicStrategyBot());
             var seats = Enumerable.Range(1, 6).Select(i => new Player($"Bot {i}", 100m, new BasicStrategyBot())).ToList();
             seats.Insert(3, human);
-            var game = new Game(new Rules(), seats, new Shoe(6, new Random(5)));
+            var game = new Game(new Rules(), seats, new Shoe(6, 2147483647));
             var screen = new TableScreen(console, KeyBindings.Defaults(), new FastForward());
-            screen.Seat(game, human, new CardCounter(), new SessionStats(100m));
+            screen.Seat(game, human, new CardCounter(), new SessionStats(100m), 2147483647);
             foreach (var seat in seats)
             {
                 game.PlaceBet(seat, 10m);
             }
 
             game.Deal();
+            screen.Round = 1;
             screen.Refresh();
 
+            // The round, the shoe, a ten-digit seed and the chips all stay readable.
             Assert.Contains("Bot 6", console.Output);
+            Assert.Contains("round 1 · 6 decks · S17", console.Output);
+            Assert.Contains("shoe 1 · seed 2147483647 · chips 90 ±0", console.Output);
             Assert.All(console.Lines, line => Assert.True(line.Length <= 80, line));
         }
 
@@ -365,6 +425,7 @@ namespace blackjack.Tests
         public void TableScreen_DescribesTheRules()
         {
             Assert.Equal("6 decks · S17 · pays 3:2 · min 10", TableScreen.DescribeRules(new Rules()));
+            Assert.Equal("6 decks · S17", TableScreen.DescribeRules(new Rules(), brief: true));
             Assert.Equal(
                 "1 deck · H17 · pays 6:5 · min 25",
                 TableScreen.DescribeRules(new Rules { DeckCount = 1, DealerHitsSoft17 = true, BlackjackPayout = 1.2m, MinimumBet = 25m }));
@@ -380,7 +441,7 @@ namespace blackjack.Tests
             var strategy = new ConsoleStrategy(screen, keys, autopilot, stats);
             var human = new Player("Tester", 100m, strategy);
             var game = new Game(new Rules(), new[] { human }, Shoe.Stacked(Of("10h 9c 6d 7s")));
-            screen.Seat(game, human, new CardCounter(), stats);
+            screen.Seat(game, human, new CardCounter(), stats, 1);
             return (strategy, screen, autopilot, stats);
         }
 
@@ -490,11 +551,12 @@ namespace blackjack.Tests
             console.Input.PushTextWithEnter("y");     // dealer hits soft 17
             console.Input.PushTextWithEnter("6:5");
             console.Input.PushTextWithEnter("60");    // penetration
+            console.Input.PushTextWithEnter("777");   // seed
             console.Input.PushKey(ConsoleKey.Enter);  // default chips
             console.Input.PushTextWithEnter("6");     // bots
             console.Input.PushKey(ConsoleKey.Enter);  // keep the keys
 
-            var settings = TableSetup.Ask(console, KeyBindings.Defaults(), Path.Combine(Path.GetTempPath(), "unused.ini"));
+            var settings = TableSetup.Ask(console, 1, KeyBindings.Defaults(), Path.Combine(Path.GetTempPath(), "unused.ini"));
 
             Assert.Equal("Ada", settings.Name);
             Assert.Equal(1, settings.Rules.DeckCount);
@@ -502,6 +564,7 @@ namespace blackjack.Tests
             Assert.True(settings.Rules.DealerHitsSoft17);
             Assert.Equal(1.2m, settings.Rules.BlackjackPayout);
             Assert.Equal(0.6m, settings.Rules.Penetration);
+            Assert.Equal(777, settings.Seed);
             Assert.Equal(1000m, settings.Chips);
             Assert.Equal(6, settings.Bots);
         }
@@ -519,7 +582,7 @@ namespace blackjack.Tests
             console.Input.PushKey(ConsoleKey.Enter);  // bots
             console.Input.PushKey(ConsoleKey.Enter);  // keep the keys
 
-            var settings = TableSetup.Ask(console, KeyBindings.Defaults(), Path.Combine(Path.GetTempPath(), "unused.ini"));
+            var settings = TableSetup.Ask(console, 1, KeyBindings.Defaults(), Path.Combine(Path.GetTempPath(), "unused.ini"));
 
             Assert.Equal(1_000_000_000m, settings.Chips);
             Assert.Contains("Invalid input", console.Output);
@@ -545,7 +608,7 @@ namespace blackjack.Tests
 
             try
             {
-                TableSetup.Ask(console, keys, path);
+                TableSetup.Ask(console, 1, keys, path);
 
                 Assert.Equal("A", keys.Label(KeyAction.Hit));
                 Assert.Equal("S", keys.Label(KeyAction.Stand));

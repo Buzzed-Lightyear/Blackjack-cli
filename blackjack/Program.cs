@@ -2,9 +2,11 @@ using System.Text;
 using blackjack.Cli;
 using Spectre.Console;
 
-// Usage: blackjack [--fast] [--seed <n>] [--keys] [--keys-file <path>]
+// Usage: blackjack [--fast] [--seed <n>] [--shoe <n>] [--keys] [--keys-file <path>]
 //   --fast              no pauses between bot moves and dealer draws
-//   --seed <n>          shuffle the shoe from a fixed seed, to replay the same cards
+//   --seed <n>          shuffle the shoes from this seed, to replay the same cards; without it one
+//                       is picked at random, and shown, so any session can be replayed
+//   --shoe <n>          start at shoe n of that seed instead of shoe 1
 //   --keys              print the key bindings and where they're read from, then exit
 //   --keys-file <path>  read and save key bindings in this file instead of keys.ini
 
@@ -12,7 +14,7 @@ Console.OutputEncoding = Encoding.UTF8;
 
 if (args.Contains("--help") || args.Contains("-h"))
 {
-    Console.WriteLine("Usage: blackjack [--fast] [--seed <n>] [--keys] [--keys-file <path>]");
+    Console.WriteLine("Usage: blackjack [--fast] [--seed <n>] [--shoe <n>] [--keys] [--keys-file <path>]");
     return 0;
 }
 
@@ -43,6 +45,21 @@ if (args.Contains("--keys"))
     return 0;
 }
 
+// Every session has a seed, so that any of them can be replayed.
+var seed = Random.Shared.Next();
+if (Value("--seed") is { } seedText && !int.TryParse(seedText, out seed))
+{
+    Console.Error.WriteLine($"--seed needs a whole number, not \"{seedText}\".");
+    return 1;
+}
+
+var firstShoe = 1;
+if (Value("--shoe") is { } shoeText && (!int.TryParse(shoeText, out firstShoe) || firstShoe < 1))
+{
+    Console.Error.WriteLine($"--shoe needs a whole number of 1 or more, not \"{shoeText}\".");
+    return 1;
+}
+
 if (!AnsiConsole.Profile.Capabilities.Interactive)
 {
     Console.Error.WriteLine("Blackjack needs an interactive terminal.");
@@ -50,9 +67,8 @@ if (!AnsiConsole.Profile.Capabilities.Interactive)
 }
 
 var pause = args.Contains("--fast") ? TimeSpan.Zero : TimeSpan.FromMilliseconds(700);
-var random = int.TryParse(Value("--seed"), out var seed) ? new Random(seed) : new Random();
 
-new BlackjackApp(AnsiConsole.Console, pause, random, keys, keysPath, warnings).Run();
+new BlackjackApp(AnsiConsole.Console, pause, seed, firstShoe, keys, keysPath, warnings).Run();
 return 0;
 
 string? Value(string flag)

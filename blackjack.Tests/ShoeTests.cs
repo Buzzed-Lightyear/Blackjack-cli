@@ -5,10 +5,13 @@ namespace blackjack.Tests
 {
     public class ShoeTests
     {
+        private static List<Card> DealAll(Shoe shoe) =>
+            Enumerable.Range(0, shoe.CardsRemaining).Select(_ => shoe.Deal()).ToList();
+
         [Fact]
         public void NewShoe_HoldsEveryCardOncePerDeck()
         {
-            var shoe = new Shoe(6, new Random(1));
+            var shoe = new Shoe(6, 1);
             var dealt = Enumerable.Range(0, 6 * 52).Select(_ => shoe.Deal()).ToList();
 
             Assert.Equal(0, shoe.CardsRemaining);
@@ -17,20 +20,69 @@ namespace blackjack.Tests
         }
 
         [Fact]
-        public void SameSeed_DealsSameOrder()
+        public void SameSeed_DealsSameOrder_ShoeAfterShoe()
         {
-            var a = new Shoe(2, new Random(42));
-            var b = new Shoe(2, new Random(42));
+            var a = new Shoe(2, 42);
+            var b = new Shoe(2, 42);
 
-            Assert.Equal(
-                Enumerable.Range(0, 104).Select(_ => a.Deal()),
-                Enumerable.Range(0, 104).Select(_ => b.Deal()));
+            Assert.Equal(DealAll(a), DealAll(b));
+            a.Shuffle();
+            b.Shuffle();
+            Assert.Equal(DealAll(a), DealAll(b));
+        }
+
+        [Fact]
+        public void ShoeNumber_DealsTheSameShoe_HoweverTheEarlierOnesWerePlayed()
+        {
+            var played = new Shoe(6, 7);
+            for (var i = 0; i < 40; i++)
+            {
+                played.Deal();
+            }
+
+            played.Shuffle();
+            for (var i = 0; i < 200; i++)
+            {
+                played.Deal();
+            }
+
+            played.Shuffle();
+            var fresh = new Shoe(6, 7, firstShoe: 3);
+
+            Assert.Equal(3, played.ShoeNumber);
+            Assert.Equal(3, fresh.ShoeNumber);
+            Assert.Equal(DealAll(played), DealAll(fresh));
+        }
+
+        [Fact]
+        public void DifferentSeedsOrShoeNumbers_DealDifferentOrders()
+        {
+            var first = DealAll(new Shoe(6, 7));
+
+            Assert.NotEqual(first, DealAll(new Shoe(6, 7, firstShoe: 2)));
+            Assert.NotEqual(first, DealAll(new Shoe(6, 8)));
+        }
+
+        [Fact]
+        public void ShoeNumber_CountsUpFromTheFirstShoe()
+        {
+            var shoe = new Shoe(1, 1, firstShoe: 4);
+            Assert.Equal(4, shoe.ShoeNumber);
+
+            shoe.Shuffle();
+            shoe.Shuffle();
+            Assert.Equal(6, shoe.ShoeNumber);
+
+            var stacked = Shoe.Stacked(C("As"));
+            Assert.Equal(1, stacked.ShoeNumber);
+            stacked.Shuffle();
+            Assert.Equal(2, stacked.ShoeNumber);
         }
 
         [Fact]
         public void NeedsReshuffle_OnceThePenetrationIsDealt()
         {
-            var shoe = new Shoe(1, new Random(1), penetration: 0.75m);
+            var shoe = new Shoe(1, 1, penetration: 0.75m);
 
             for (var i = 0; i < 38; i++)
             {
@@ -45,7 +97,7 @@ namespace blackjack.Tests
         [Fact]
         public void Shuffle_RefillsTheShoe()
         {
-            var shoe = new Shoe(1, new Random(1));
+            var shoe = new Shoe(1, 1);
             for (var i = 0; i < 45; i++)
             {
                 shoe.Deal();
@@ -82,7 +134,13 @@ namespace blackjack.Tests
         [InlineData(-1)]
         public void DeckCount_MustBePositive(int decks)
         {
-            Assert.Throws<ArgumentOutOfRangeException>(() => new Shoe(decks, new Random()));
+            Assert.Throws<ArgumentOutOfRangeException>(() => new Shoe(decks, 1));
+        }
+
+        [Fact]
+        public void FirstShoe_MustBeOneOrMore()
+        {
+            Assert.Throws<ArgumentOutOfRangeException>(() => new Shoe(1, 1, firstShoe: 0));
         }
     }
 }
