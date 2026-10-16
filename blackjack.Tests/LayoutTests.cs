@@ -5,12 +5,13 @@ using blackjack.Engine;
 using blackjack.Engine.SideBets;
 using blackjack.Strategies;
 using Spectre.Console;
+using Spectre.Console.Rendering;
 using Spectre.Console.Testing;
 using static blackjack.Tests.Cards;
 
 namespace blackjack.Tests
 {
-    // How the table fits terminals of every size and keeps its regions still.
+    // How the table fits terminals of every size, follows a resize, and keeps its regions still.
     // Frames rendered outside a live display follow each other in the output with no separator,
     // so each test slices off the part written by its own Refresh.
     public class LayoutTests
@@ -197,6 +198,46 @@ namespace blackjack.Tests
             Assert.Equal(ConsoleKey.X, table.Screen.ReadKey().Key);
         }
 
+        [Fact]
+        public void Resize_RedrawsAtTheNewSize_FromAClearedScreen()
+        {
+            var test = NewConsole(80, 24);
+            var console = new ClearCountingConsole(test);
+            var table = NewTable(console);
+            DealToYourMove(table);
+
+            var before = Frame(test, table.Screen);
+            AssertFills(before, 80, 24);
+            Assert.Equal(0, console.Clears);
+
+            // The terminal grows while a key is awaited: the frame is rebuilt for the new size.
+            test.Profile.Width = 100;
+            test.Profile.Height = 30;
+            test.Input.PushKey(ConsoleKey.S);
+            var start = test.Output.Length;
+            var key = table.Screen.ReadKey();
+            var after = test.Output[start..];
+
+            Assert.Equal(ConsoleKey.S, key.Key);
+            Assert.Equal(1, console.Clears);
+            AssertFills(after, 100, 30);
+            Assert.Equal(RowOf(after, "Bot 1"), RowOf(after, "Bot 6"));
+
+            // The same size again is drawn over the last frame, with no clear.
+            test.Input.PushKey(ConsoleKey.S);
+            table.Screen.ReadKey();
+            Assert.Equal(1, console.Clears);
+
+            // A wait between moves notices a resize too.
+            test.Profile.Width = 80;
+            test.Profile.Height = 24;
+            start = test.Output.Length;
+            table.Screen.Wait(TimeSpan.FromMilliseconds(1));
+
+            Assert.Equal(2, console.Clears);
+            AssertFills(test.Output[start..], 80, 24);
+        }
+
         [Theory]
         [InlineData(60, 16)]
         [InlineData(80, 24)]
@@ -311,6 +352,30 @@ namespace blackjack.Tests
             console.Write(new Rows(new Line("[red]abc[/] def ghi jkl"), new Line("short", Justify.Center)));
 
             Assert.Equal(new[] { "abc def g…", "  short" }, console.Lines.Select(line => line.TrimEnd()));
+        }
+
+        // Counts the screen clears instead of writing them to the output as escape codes.
+        private sealed class ClearCountingConsole : IAnsiConsole
+        {
+            private readonly TestConsole inner;
+
+            public ClearCountingConsole(TestConsole inner)
+            {
+                this.inner = inner;
+            }
+
+            public int Clears { get; private set; }
+            public Profile Profile => inner.Profile;
+            public IAnsiConsoleCursor Cursor => inner.Cursor;
+            public IAnsiConsoleInput Input => inner.Input;
+            public IExclusivityMode ExclusivityMode => inner.ExclusivityMode;
+            public RenderPipeline Pipeline => inner.Pipeline;
+
+            public void Clear(bool home) => Clears++;
+
+            public void Write(IRenderable renderable) => inner.Write(renderable);
+
+            public void WriteAnsi(Action<AnsiWriter> action) => inner.WriteAnsi(action);
         }
     }
 }

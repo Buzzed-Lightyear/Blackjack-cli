@@ -18,12 +18,14 @@ namespace blackjack.Cli
     // your seat beside the count, the latest events, and a bar that always says what the keys do
     // right now. The frame fills the terminal, TableLayout decides how, and every region keeps its
     // size while the terminal does, so nothing moves between frames; inside a live display each
-    // frame is drawn over the last instead of clearing the screen.
+    // frame is drawn over the last instead of clearing the screen. A resize is noticed while the
+    // table waits, and the next frame starts from a cleared screen.
     internal sealed class TableScreen
     {
         private const int InfoWidth = 22;
         private const int MaxEvents = 40;
         private static readonly TimeSpan WaitSlice = TimeSpan.FromMilliseconds(15);
+        private static readonly TimeSpan SizePoll = TimeSpan.FromMilliseconds(50);
         private static readonly KeyAction[] SideBetKeys = { KeyAction.SideBet1, KeyAction.SideBet2 };
 
         private readonly IAnsiConsole console;
@@ -38,6 +40,9 @@ namespace blackjack.Cli
         private SessionStats stats = null!;
         private int seed;
         private (string Line1, string Line2, BarTone Tone)? bar;
+
+        // The console size the last frame was built for.
+        private (int Width, int Height)? drawn;
 
         public TableScreen(IAnsiConsole console, KeyBindings keys, FastForward fastForward)
         {
@@ -123,7 +128,15 @@ namespace blackjack.Cli
 
         public void Refresh()
         {
+            // A live display only redraws the lines of its last frame, so after a resize the rest of
+            // the screen would keep pieces of the old one: the next frame starts from a clear screen.
+            var resized = Resized;
             var frame = Build();
+            if (resized)
+            {
+                console.Clear(true);
+            }
+
             if (live is null)
             {
                 console.Write(frame);
@@ -134,10 +147,21 @@ namespace blackjack.Cli
             }
         }
 
+        // Watches the terminal size while the key is awaited; the read is a task so that the wait
+        // can be interrupted for a redraw, and the test console's completes at once.
         public ConsoleKeyInfo ReadKey()
         {
             Refresh();
-            return console.Input.ReadKey(intercept: true)
+            var pending = console.Input.ReadKeyAsync(intercept: true, CancellationToken.None);
+            while (Task.WaitAny(new Task[] { pending }, SizePoll) < 0)
+            {
+                if (Resized)
+                {
+                    Refresh();
+                }
+            }
+
+            return pending.GetAwaiter().GetResult()
                 ?? throw new InvalidOperationException("No console input is available.");
         }
 
@@ -189,7 +213,7 @@ namespace blackjack.Cli
                     }
                 }
 
-                if (changed)
+                if (changed || Resized)
                 {
                     Refresh();
                 }
@@ -204,10 +228,15 @@ namespace blackjack.Cli
             }
         }
 
+        // The size the last frame was built for is checked against the terminal's size now.
+        private bool Resized =>
+            drawn is { } last && (last.Width != console.Profile.Width || last.Height != console.Profile.Height);
+
         public IRenderable Build()
         {
             var width = console.Profile.Width;
             var height = console.Profile.Height;
+            drawn = (width, height);
 
             var layout = new TableLayout(width, height, game.Players.Count, seatRows.Length);
             if (layout.TooSmall)
