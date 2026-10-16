@@ -4,6 +4,8 @@ namespace blackjack.Strategies
     public enum Move
     {
         Hit,
-        Stand
+        Stand,
+        Double,
+        Split
     }
 }
