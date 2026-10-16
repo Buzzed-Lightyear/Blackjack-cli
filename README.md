@@ -84,7 +84,7 @@ straight away. The setup also asks about these, all shown with their defaults:
 
 - double on any two cards: yes (no limits doubling to hard 9, 10 and 11)
 - double after a split: yes
-- most hands after splitting: 3 (1 turns splitting off)
+- most hands after splitting: 4 (1 turns splitting off)
 - resplit aces: no (yes lets a split ace that draws another ace be split again, though still not hit)
 - hit split aces: no
 - a 21 after a split pays even money: yes (no pays it like a blackjack when it beats the dealer)

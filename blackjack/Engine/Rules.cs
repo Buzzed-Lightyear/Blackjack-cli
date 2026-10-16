@@ -17,7 +17,7 @@ namespace blackjack.Engine
         public bool DoubleAfterSplit { get; set; } = true;
 
         // How many hands a player can hold after splitting; 1 turns splitting off.
-        public int MaxSplitHands { get; set; } = 3;
+        public int MaxSplitHands { get; set; } = 4;
         public bool ResplitAces { get; set; }
 
         // Split aces normally get one card each and stand.

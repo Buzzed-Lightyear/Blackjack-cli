@@ -584,8 +584,10 @@ namespace blackjack.Tests
         [Fact]
         public void Split_ResplitsUpToMaxHands_ThenRefuses()
         {
+            Assert.Equal(4, new Rules().MaxSplitHands);
+
             var player = NewPlayer();
-            var game = NewGame("8h 6d 8c 10s 8d 5s 8s 9h Ks", player);
+            var game = NewGame(new Rules { MaxSplitHands = 3 }, "8h 6d 8c 10s 8d 5s 8s 9h Ks", player);
             BetAndDeal(game);
 
             game.Split();
