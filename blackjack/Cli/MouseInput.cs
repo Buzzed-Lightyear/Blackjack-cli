@@ -26,24 +26,34 @@ namespace blackjack.Cli
         // The input mode Windows had before Enable, to put back.
         private static uint? savedMode;
 
-        public static void Enable(IAnsiConsole console)
+        // Asks the terminal to report clicks, and says whether it will. On Windows only Windows
+        // Terminal does (it sets WT_SESSION), and only in virtual terminal input mode; the legacy
+        // console is left as it is.
+        public static bool Enable(IAnsiConsole console)
         {
             if (!console.Profile.Capabilities.Ansi)
             {
-                return;
+                return false;
             }
 
-            // Windows only passes the reports through as characters in virtual terminal input mode.
             if (OperatingSystem.IsWindows())
             {
-                var handle = GetStdHandle(StdInputHandle);
-                if (GetConsoleMode(handle, out var mode) && SetConsoleMode(handle, mode | EnableVirtualTerminalInput))
+                if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WT_SESSION")))
                 {
-                    savedMode = mode;
+                    return false;
                 }
+
+                var handle = GetStdHandle(StdInputHandle);
+                if (!GetConsoleMode(handle, out var mode) || !SetConsoleMode(handle, mode | EnableVirtualTerminalInput))
+                {
+                    return false;
+                }
+
+                savedMode = mode;
             }
 
             console.WriteAnsi(On);
+            return true;
         }
 
         public static void Disable(IAnsiConsole console)

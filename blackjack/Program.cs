@@ -2,11 +2,12 @@ using System.Text;
 using blackjack.Cli;
 using Spectre.Console;
 
-// Usage: blackjack [--fast] [--seed <n>] [--shoe <n>] [--keys] [--keys-file <path>]
+// Usage: blackjack [--fast] [--seed <n>] [--shoe <n>] [--no-mouse] [--keys] [--keys-file <path>]
 //   --fast              no pauses between bot moves and dealer draws
 //   --seed <n>          shuffle the shoes from this seed, to replay the same cards; without it one
 //                       is picked at random, and shown, so any session can be replayed
 //   --shoe <n>          start at shoe n of that seed instead of shoe 1
+//   --no-mouse          don't ask the terminal to report clicks on the bar's key hints
 //   --keys              print the key bindings and where they're read from, then exit
 //   --keys-file <path>  read and save key bindings in this file instead of keys.ini
 
@@ -14,7 +15,7 @@ Console.OutputEncoding = Encoding.UTF8;
 
 if (args.Contains("--help") || args.Contains("-h"))
 {
-    Console.WriteLine("Usage: blackjack [--fast] [--seed <n>] [--shoe <n>] [--keys] [--keys-file <path>]");
+    Console.WriteLine("Usage: blackjack [--fast] [--seed <n>] [--shoe <n>] [--no-mouse] [--keys] [--keys-file <path>]");
     return 0;
 }
 
@@ -68,7 +69,7 @@ if (!AnsiConsole.Profile.Capabilities.Interactive)
 
 var pause = args.Contains("--fast") ? TimeSpan.Zero : TimeSpan.FromMilliseconds(700);
 
-new BlackjackApp(AnsiConsole.Console, pause, seed, firstShoe, keys, keysPath, warnings).Run();
+new BlackjackApp(AnsiConsole.Console, pause, seed, firstShoe, keys, keysPath, warnings, mouse: !args.Contains("--no-mouse")).Run();
 return 0;
 
 string? Value(string flag)

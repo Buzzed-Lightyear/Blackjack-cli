@@ -16,6 +16,7 @@ Options go after `--`, for example `dotnet run --project blackjack -- --fast --s
 - `--seed <n>` shuffles every shoe from this seed, so the same cards come out again; without it a
   seed is picked at random and shown, so any session can be replayed
 - `--shoe <n>` starts at shoe `n` of that seed instead of shoe 1
+- `--no-mouse` leaves the mouse alone, so the bar's key hints can't be clicked
 - `--keys` prints the key bindings and which file they came from
 - `--keys-file <path>` reads and saves key bindings somewhere other than `keys.ini`
 
@@ -82,10 +83,11 @@ autopilot's hands and net on their own rows. Keys pressed while the bots and dea
 ignored, so a stray press can't deal the next hand.
 
 Mouse: any key hint in the bar can be clicked instead, and counts as that key: `S stand`, `Space
-deal`, the `E` of `Q/E`, `X` twice to cash out. A click anywhere else does nothing. This works in
-terminals that report mouse clicks, such as Windows Terminal and most Linux and macOS terminals
-(the legacy Windows console does not), and while the table is up most of them select text with
-Shift held. Everything stays keyboard-first; nothing needs the mouse.
+deal`, the `E` of `Q/E`, `X` twice to cash out. A click anywhere else does nothing. Clicks are
+reported under Windows Terminal and in most Linux and macOS terminals, and not in the legacy
+Windows console, where the mouse is left alone; `--no-mouse` turns the reporting off anywhere.
+While it is on, most terminals select text with Shift held. Everything stays keyboard-first;
+nothing needs the mouse.
 
 ### Doubling, splitting and insurance
 

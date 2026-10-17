@@ -451,6 +451,21 @@ namespace blackjack.Tests
         }
 
         [Fact]
+        public void App_LeavesTheMouseAlone_WithTheFlagOff()
+        {
+            var console = new TestConsole().Width(110).Height(30).Interactive().EmitAnsiSequences();
+            PushSetup(console);
+            console.Input.PushKey(ConsoleKey.X);
+            console.Input.PushKey(ConsoleKey.X);
+
+            new BlackjackApp(console, TimeSpan.Zero, 1, mouse: false).Run();
+
+            Assert.DoesNotContain("\u001b[?1000", console.Output);
+            Assert.DoesNotContain("\u001b[?1006", console.Output);
+            Assert.Contains("Thanks for playing, Tester!", console.Output);
+        }
+
+        [Fact]
         public void App_StopsTheReportsEvenWhenTheGameThrows()
         {
             var console = new TestConsole().Width(110).Height(30).Interactive().EmitAnsiSequences();
