@@ -17,10 +17,11 @@ namespace blackjack.Cli
 
     // The whole table on one screen, top to bottom: header, dealer, the other seats in seat order,
     // your seat beside the count, the latest events, and a bar that always says what the keys do
-    // right now. The frame fills the terminal, TableLayout decides how, and every region keeps its
-    // size while the terminal does, so nothing moves between frames; inside a live display each
-    // frame is drawn over the last instead of clearing the screen. A resize is noticed while the
-    // table waits, and the next frame starts from a cleared screen.
+    // right now, whose key hints can be clicked as well as typed. The frame fills the terminal,
+    // TableLayout decides how, and every region keeps its size while the terminal does, so nothing
+    // moves between frames; inside a live display each frame is drawn over the last instead of
+    // clearing the screen. A resize is noticed while the table waits, and the next frame starts
+    // from a cleared screen.
     internal sealed class TableScreen
     {
         private const int InfoWidth = 22;
@@ -28,6 +29,11 @@ namespace blackjack.Cli
         private static readonly TimeSpan WaitSlice = TimeSpan.FromMilliseconds(15);
         private static readonly TimeSpan SizePoll = TimeSpan.FromMilliseconds(50);
         private static readonly KeyAction[] SideBetKeys = { KeyAction.SideBet1, KeyAction.SideBet2 };
+
+        // The keys kept for typing a bet, which the bet line names as hints too.
+        private static readonly KeyChord[] TypingKeys = new[] { "Enter", "Backspace", "Esc" }
+            .Select(name => KeyChord.TryParse(name, out var chord) ? chord : throw new ArgumentException(name))
+            .ToArray();
 
         private readonly IAnsiConsole console;
         private readonly KeyBindings keys;
@@ -44,6 +50,12 @@ namespace blackjack.Cli
 
         // The console size the last frame was built for.
         private (int Width, int Height)? drawn;
+
+        // Where the last frame drew each key hint of the bar, as click targets.
+        private readonly List<HintSpan> hints = new();
+
+        // Keys read while checking for a mouse report that turned out not to be one, to be read next.
+        private readonly Queue<ConsoleKeyInfo> unread = new();
 
         public TableScreen(IAnsiConsole console, KeyBindings keys, FastForward fastForward)
         {
@@ -148,11 +160,38 @@ namespace blackjack.Cli
             }
         }
 
-        // Watches the terminal size while the key is awaited; the read is a task so that the wait
-        // can be interrupted for a redraw, and the test console's completes at once.
+        // Draws the table, then waits for a key: one typed, or the one a clicked hint in the bar
+        // stands for. Mouse events elsewhere are ignored and the wait goes on.
         public ConsoleKeyInfo ReadKey()
         {
             Refresh();
+            while (true)
+            {
+                if (NextKey(AwaitKey) is { } key)
+                {
+                    return key;
+                }
+            }
+        }
+
+        // The key hint drawn at a cell of the last frame, if any; column and row are 0-based.
+        public KeyChord? HintAt(int column, int row)
+        {
+            foreach (var hint in hints)
+            {
+                if (hint.Row == row && column >= hint.Start && column < hint.End)
+                {
+                    return hint.Chord;
+                }
+            }
+
+            return null;
+        }
+
+        // Watches the terminal size while the key is awaited; the read is a task so that the wait
+        // can be interrupted for a redraw, and the test console's completes at once.
+        private ConsoleKeyInfo? AwaitKey()
+        {
             var pending = console.Input.ReadKeyAsync(intercept: true, CancellationToken.None);
             while (Task.WaitAny(new Task[] { pending }, SizePoll) < 0)
             {
@@ -164,6 +203,41 @@ namespace blackjack.Cli
 
             return pending.GetAwaiter().GetResult()
                 ?? throw new InvalidOperationException("No console input is available.");
+        }
+
+        private ConsoleKeyInfo? ReadKeyNow() => console.Input.ReadKey(intercept: true);
+
+        // A key is waiting: one put back after a mouse check, or one at the console.
+        private bool KeyAvailable => unread.Count > 0 || console.Input.IsKeyAvailable();
+
+        // The next key as the game should see it, read with readRaw. A mouse report is read to its
+        // end: a press on a hint in the bar becomes the key the hint names, and any other report is
+        // nothing at all (null). Keys taken while checking for a report that wasn't one are kept,
+        // and come first next time.
+        private ConsoleKeyInfo? NextKey(Func<ConsoleKeyInfo?> readRaw)
+        {
+            if (unread.Count > 0)
+            {
+                return unread.Dequeue();
+            }
+
+            if (readRaw() is not { } raw)
+            {
+                return null;
+            }
+
+            var taken = new List<ConsoleKeyInfo>();
+            if (MouseInput.TryDecode(raw, console.Input, taken) is not { } click)
+            {
+                foreach (var key in taken)
+                {
+                    unread.Enqueue(key);
+                }
+
+                return raw;
+            }
+
+            return click.Pressed && HintAt(click.Column, click.Row) is { } chord ? chord.ToKeyInfo() : null;
         }
 
         public bool HandleToggle(ConsoleKeyInfo key)
@@ -199,10 +273,13 @@ namespace blackjack.Cli
             while (true)
             {
                 var changed = false;
-                while (!(fastForward.IsActive && fastForward.StopRequested)
-                    && console.Input.IsKeyAvailable()
-                    && console.Input.ReadKey(intercept: true) is { } key)
+                while (!(fastForward.IsActive && fastForward.StopRequested) && KeyAvailable)
                 {
+                    if (NextKey(ReadKeyNow) is not { } key)
+                    {
+                        continue;
+                    }
+
                     if (HandleToggle(key))
                     {
                         changed = true;
@@ -238,6 +315,7 @@ namespace blackjack.Cli
             var width = console.Profile.Width;
             var height = console.Profile.Height;
             drawn = (width, height);
+            hints.Clear();
 
             var layout = new TableLayout(width, height, game.Players.Count, seatRows.Length);
             if (layout.TooSmall)
@@ -251,7 +329,7 @@ namespace blackjack.Cli
                 new Layout("seats", Seats(layout)).Size(layout.SeatRows * layout.SeatLines),
                 new Layout("you").Size(layout.YouRows),
                 new Layout("events", Events(layout.EventRows)).Size(layout.EventRows),
-                new Layout("bar", Bar()).Size(TableLayout.BarRows));
+                new Layout("bar", Bar(width, height)).Size(TableLayout.BarRows));
             if (layout.CountPanel)
             {
                 root["you"].SplitColumns(
@@ -671,7 +749,9 @@ namespace blackjack.Cli
             return Lines(shown.Select((line, i) => i == shown.Count - 1 ? $"[bold]›[/] {line}" : $"  [grey]{line}[/]"));
         }
 
-        private IRenderable Bar()
+        // The bar's two lines sit on the third and second rows from the bottom, inside a border and
+        // a column of padding.
+        private IRenderable Bar(int width, int height)
         {
             var (line1, line2, tone) = fastForward.IsActive ? AutopilotBar() : bar ?? WaitingBar();
             var colour = fastForward.IsActive ? Color.Aqua : tone switch
@@ -681,7 +761,98 @@ namespace blackjack.Cli
                 _ => Color.Grey
             };
 
-            return new Panel(Lines(new[] { line1, line2 })).Border(BoxBorder.Heavy).BorderColor(colour).Expand();
+            RegisterHints(line1, height - 3, width);
+            RegisterHints(line2, height - 2, width);
+
+            // An empty first line still takes its row, so the second stays where its hints are.
+            var lines = Lines(new[] { line1.Length == 0 ? " " : line1, line2 });
+            return new Panel(lines).Border(BoxBorder.Heavy).BorderColor(colour).Expand();
+        }
+
+        // Records the key hints of one bar line as click targets. A hint is a key label standing as
+        // a word of its own, together with the words after it up to the next · separator, so "S
+        // stand" and "X again to confirm" are each one target; the labels either side of a slash,
+        // as in Q/E, are a target each of just the label. The line starts two columns in and is cut
+        // with an ellipsis where it overflows the panel: nothing past the cut can be clicked, and a
+        // label the cut runs through is left out.
+        private void RegisterHints(string markup, int row, int width)
+        {
+            var text = Markup.Remove(markup);
+            var room = width - 4;
+            var visible = text.Length <= room ? text.Length : room - 1;
+            var labels = HintLabels();
+            var start = 0;
+            while (start < text.Length)
+            {
+                var separator = text.IndexOf(" · ", start, StringComparison.Ordinal);
+                var end = separator < 0 ? text.Length : separator;
+                while (end > start && text[end - 1] == ' ')
+                {
+                    end--;
+                }
+
+                RegisterSegment(text, start, end, row, visible, labels);
+                start = separator < 0 ? text.Length : separator + 3;
+            }
+        }
+
+        private void RegisterSegment(string text, int start, int end, int row, int visible, Dictionary<string, KeyChord> labels)
+        {
+            var at = start;
+            while (at < end)
+            {
+                if (text[at] == ' ')
+                {
+                    at++;
+                    continue;
+                }
+
+                var wordEnd = text.IndexOf(' ', at, end - at);
+                if (wordEnd < 0)
+                {
+                    wordEnd = end;
+                }
+
+                var word = text[at..wordEnd];
+                if (labels.TryGetValue(word, out var chord))
+                {
+                    AddHint(row, at, end, chord, visible);
+                    return;
+                }
+
+                var parts = word.Split('/');
+                if (parts.Length > 1 && parts.All(labels.ContainsKey))
+                {
+                    var partStart = at;
+                    foreach (var part in parts)
+                    {
+                        AddHint(row, partStart, partStart + part.Length, labels[part], visible);
+                        partStart += part.Length + 1;
+                    }
+                }
+
+                at = wordEnd;
+            }
+        }
+
+        private void AddHint(int row, int start, int end, KeyChord chord, int visible)
+        {
+            if (start + chord.Label.Length <= visible)
+            {
+                hints.Add(new HintSpan(row, start + 2, Math.Min(end, visible) + 2, chord));
+            }
+        }
+
+        // Every key a hint can stand for, by the label the bar shows it under.
+        private Dictionary<string, KeyChord> HintLabels()
+        {
+            var labels = new Dictionary<string, KeyChord>(StringComparer.Ordinal);
+            foreach (var chord in Enum.GetValues<KeyAction>().SelectMany(keys.Get).Concat(TypingKeys))
+            {
+                labels.TryAdd(chord.Label, chord);
+            }
+
+            return labels;
         }
 
         private static IRenderable Lines(IEnumerable<string> lines) => new Rows(lines.Select(line => new Line(line)));
@@ -763,6 +934,9 @@ namespace blackjack.Cli
 
             return $"{payout:0.##}:1";
         }
+
+        // The cells of one bar row, Start up to but not including End, that stand for a key.
+        private readonly record struct HintSpan(int Row, int Start, int End, KeyChord Chord);
 
         // Renders its content at a set height, so a layout fills that many lines and no more.
         private sealed class FixedHeight : IRenderable
