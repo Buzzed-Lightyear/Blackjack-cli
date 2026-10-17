@@ -247,7 +247,7 @@ namespace blackjack.Cli
 
             var root = new Layout("table").SplitRows(
                 new Layout("header", Header(width)).Size(TableLayout.HeaderRows),
-                new Layout("dealer", Dealer(layout.TileHeight)).Size(layout.DealerRows),
+                new Layout("dealer", Dealer(layout)).Size(layout.DealerRows),
                 new Layout("seats", Seats(layout)).Size(layout.SeatRows * layout.SeatLines),
                 new Layout("you").Size(layout.YouRows),
                 new Layout("events", Events(layout.EventRows)).Size(layout.EventRows),
@@ -256,7 +256,7 @@ namespace blackjack.Cli
             {
                 root["you"].SplitColumns(
                     new Layout("seat", YourSeat(layout)),
-                    new Layout("count", Count(layout.PanelRows - 2)).Size(TableLayout.CountWidth));
+                    new Layout("count", Count()).Size(TableLayout.CountWidth));
             }
             else
             {
@@ -301,26 +301,55 @@ namespace blackjack.Cli
             return $"[bold green]♠ BLACKJACK[/]  [grey]{string.Join(" · ", parts.Where(p => p is not null))}[/]";
         }
 
-        // tileHeight is 0 for one-line chips.
-        private IRenderable Dealer(int tileHeight)
+        // The dealer's cards in the middle of the width, as one-line chips when the tile height
+        // is 0, and the shoe at the right edge on a wide terminal: beside the chips, or as a stack
+        // the height of the tiles with its label on the total's row.
+        private IRenderable Dealer(TableLayout layout)
         {
             var hand = game.DealerHand;
             var label = game.Phase == Phase.DealerTurn ? "[black on yellow] DEALER [/]" : "[bold]DEALER[/]";
             var total = DealerTotal();
+            var tileHeight = layout.TileHeight;
+            var shoeCards = game.Rules.DeckCount * Shoe.CardsPerDeck;
 
             if (tileHeight == 0)
             {
                 var chips = hand.Cards.Count == 0
                     ? DealerWaiting()
                     : string.Join(" ", hand.Cards.Select((c, i) => i == 1 && !game.HoleCardRevealed ? CardArt.HiddenChip : CardArt.Chip(c)));
-                return new Line($"{label}  {chips}  {total}", Justify.Center);
+                var shoeLines = layout.ShowShoe
+                    ? new[] { true, false }.Select(decks => ShoeArt.Line(game.ShoeNumber, game.CardsRemaining, shoeCards, game.Rules.Penetration, decks)).ToArray()
+                    : Array.Empty<string>();
+                return Beside($"{label}  {chips}  {total}", layout.Width, shoeLines);
             }
 
-            IRenderable cards = hand.Cards.Count == 0
-                ? new Markup($"{new string('\n', (tileHeight - 1) / 2)}{DealerWaiting()}")
-                : new Markup(CardArt.Row(hand.Cards.Select((c, i) => i == 1 && !game.HoleCardRevealed ? CardArt.Back(tileHeight) : CardArt.Tile(c, tileHeight))));
+            var cards = hand.Cards.Count == 0
+                ? Enumerable.Range(0, tileHeight).Select(i => i == (tileHeight - 1) / 2 ? DealerWaiting() : "").ToArray()
+                : CardArt.Row(hand.Cards.Select((c, i) => i == 1 && !game.HoleCardRevealed ? CardArt.Back(tileHeight) : CardArt.Tile(c, tileHeight))).Split('\n');
+            var shoe = layout.ShowShoe ? ShoeArt.Block(game.ShoeNumber, game.CardsRemaining, shoeCards, game.Rules.Penetration, tileHeight) : null;
 
-            return new Rows(new Line(label, Justify.Center), Align.Center(cards), new Line(total, Justify.Center));
+            var rows = new List<IRenderable> { Beside(label, layout.Width) };
+            rows.AddRange(cards.Select((row, i) => Beside(row, layout.Width, shoe?[i])));
+            rows.Add(Beside(total, layout.Width, shoe?[tileHeight]));
+            return new Rows(rows);
+        }
+
+        // One line with the middle part centred on the whole width and, one cell from the right
+        // edge, the first of the right parts that stays clear of it: the middle is never pushed aside.
+        private static Line Beside(string middle, int width, params string?[] rights)
+        {
+            var text = new Markup(middle).Length;
+            var left = Math.Max(0, (width - text) / 2);
+            foreach (var right in rights)
+            {
+                var at = right is null ? 0 : width - new Markup(right).Length - 1;
+                if (right is not null && left + text + 1 <= at)
+                {
+                    return new Line($"{new string(' ', left)}{middle}{new string(' ', at - left - text)}{right}");
+                }
+            }
+
+            return new Line($"{new string(' ', left)}{middle}");
         }
 
         private string DealerWaiting() =>
@@ -460,8 +489,9 @@ namespace blackjack.Cli
             if (hands.Count == 0 || tiles || (hands.Count == 1 && hands[0].Cards.Count == 0))
             {
                 var hand = hands.FirstOrDefault();
+                var placeholder = game.Phase == Phase.Betting && hand is null ? "[grey]place your bet[/]" : "";
                 IRenderable cards = hand is null || hand.Cards.Count == 0
-                    ? new Markup(game.Phase == Phase.Betting && hand is null ? "[grey]place your bet[/]" : "")
+                    ? new Markup(placeholder)
                     : new Markup(CardArt.Row(hand.Cards.Select(c => CardArt.Tile(c, layout.TileHeight))));
 
                 var info = new List<string>();
@@ -476,10 +506,22 @@ namespace blackjack.Cli
                 info.AddRange(SideBetLines(wide: false));
                 info.Add($"[grey]chips {Money(human.Chips)}[/]");
 
-                body = new Grid()
+                var grid = new Grid()
                     .AddColumn(new GridColumn())
-                    .AddColumn(new GridColumn().Width(InfoWidth).NoWrap())
-                    .AddRow(cards, Lines(info.Take(rows)));
+                    .AddColumn(new GridColumn().Width(InfoWidth).NoWrap());
+                var cells = new List<IRenderable> { cards, Lines(info.Take(rows)) };
+
+                // The chips go beside the figures when the panel has room after the cards and them.
+                var cardsWidth = hand is null || hand.Cards.Count == 0
+                    ? new Markup(placeholder).Length
+                    : hand.Cards.Count * (CardArt.TileWidth + 1) - 1;
+                if (layout.TileHeight > 0 && Rack(hand, layout.PanelWidth - 4 - cardsWidth - 2 - InfoWidth - 2, rows) is { } rack)
+                {
+                    grid.AddColumn(new GridColumn().NoWrap());
+                    cells.Add(Lines(rack));
+                }
+
+                body = grid.AddRow(cells.ToArray());
             }
             else
             {
@@ -498,7 +540,16 @@ namespace blackjack.Cli
                 }
 
                 lines.Add($"[grey]chips {Money(human.Chips)}[/]");
-                body = Lines(lines.Take(rows));
+                var shown = lines.Take(rows).ToList();
+
+                // The chips sit at the right of the panel when every line stays clear of them.
+                var longest = shown.Max(line => Markup.Remove(line).Length);
+                body = layout.TileHeight > 0 && Rack(null, layout.PanelWidth - 4 - longest - 2, rows) is { } rack
+                    ? new Grid()
+                        .AddColumn(new GridColumn().Width(layout.PanelWidth - 4 - new Markup(rack[0]).Length - 2).NoWrap())
+                        .AddColumn(new GridColumn().NoWrap())
+                        .AddRow(Lines(shown), Lines(rack))
+                    : Lines(shown);
             }
 
             return new Panel(body)
@@ -506,6 +557,22 @@ namespace blackjack.Cli
                 .Border(colour == Color.Aqua ? BoxBorder.Rounded : BoxBorder.Double)
                 .BorderColor(colour)
                 .Expand();
+        }
+
+        // Your chips as stacks, with the bet on the table as a pile while there is room for both,
+        // or nothing when even the stacks would not fit the columns left.
+        private string[]? Rack(Hand? hand, int room, int rows)
+        {
+            var bet = hand is { Outcome: null } ? hand.Bet : (decimal?)null;
+            foreach (var pile in new[] { bet, null })
+            {
+                if (ChipArt.Width(human.Chips, pile) is var width && width > 0 && width <= room)
+                {
+                    return ChipArt.Rack(human.Chips, pile, rows);
+                }
+            }
+
+            return null;
         }
 
         private string HandLine(Hand hand, bool several)
@@ -609,8 +676,8 @@ namespace blackjack.Cli
             return $"[bold]{(hand.IsSoft && hand.Value < 21 ? $"soft {hand.Value}" : hand.Value.ToString())}[/]";
         }
 
-        // The count beside your seat; the shoe bar goes when the panel has no row for it.
-        private IRenderable Count(int rows)
+        // The count beside your seat.
+        private IRenderable Count()
         {
             var lines = new List<string>();
             if (!ShowCount)
@@ -623,10 +690,6 @@ namespace blackjack.Cli
                 lines.Add($"running  [bold]{counter.RunningCount:+0;-0;0}[/]");
                 lines.Add($"true     [bold {TrueCountColour()}]{counter.TrueCount(game.DecksRemaining):+0.0;-0.0;0.0}[/]");
                 lines.Add($"decks    {game.DecksRemaining:0.0} left");
-                if (rows >= 4)
-                {
-                    lines.Add(ShoeBar());
-                }
             }
 
             return new Panel(Lines(lines)).Header(" Hi-Lo ").BorderColor(Color.Grey).Expand();
@@ -650,18 +713,6 @@ namespace blackjack.Cli
         {
             var trueCount = counter.TrueCount(game.DecksRemaining);
             return trueCount >= 2m ? "green" : trueCount <= -1m ? "red" : "white";
-        }
-
-        // How far through the shoe the deal is, with the cut card marked.
-        private string ShoeBar()
-        {
-            const int width = 12;
-            var total = game.Rules.DeckCount * Shoe.CardsPerDeck;
-            var dealt = total - game.CardsRemaining;
-            var filled = (int)Math.Round(width * (double)dealt / total);
-            var cut = (int)Math.Round(width * (double)game.Rules.Penetration);
-            var cells = Enumerable.Range(0, width).Select(i => i < filled ? '▓' : i == cut ? '│' : '░');
-            return $"[grey]{string.Concat(cells)} {100 * dealt / total}%[/]";
         }
 
         // The last events that fit, newest at the bottom.

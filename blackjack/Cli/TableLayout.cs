@@ -13,6 +13,7 @@ namespace blackjack.Cli
         public const int OneSeatRowWidth = 90;
         public const int CountPanelWidth = 70;
         public const int CountWidth = 26;
+        public const int ShoeWidth = 80;
         public const int HeaderRows = 1;
         public const int BarRows = 4;
 
@@ -82,6 +83,10 @@ namespace blackjack.Cli
 
         // The Hi-Lo count sits in a panel beside your seat, or on one line under it when narrow.
         public bool CountPanel { get; }
+
+        // The shoe is drawn in the dealer's region when the terminal is wide enough for it to
+        // stay clear of the cards.
+        public bool ShowShoe => Width >= ShoeWidth;
         public int YouRows => PanelRows + (CountPanel ? 0 : 1);
         public int PanelWidth => CountPanel ? Width - CountWidth : Width;
         public int EventRows { get; }
