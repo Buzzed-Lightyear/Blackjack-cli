@@ -426,5 +426,38 @@ namespace blackjack.Tests
             Assert.Contains("Thanks for playing, Tester!", console.Output);
         }
 
+        [Fact]
+        public void App_AsksTheTerminalToReportTheMouse_ForTheTableOnly()
+        {
+            var console = new TestConsole().Width(110).Height(30).Interactive().EmitAnsiSequences();
+            PushSetup(console);
+            console.Input.PushKey(ConsoleKey.X);
+            console.Input.PushKey(ConsoleKey.X);
+
+            new BlackjackApp(console, TimeSpan.Zero, 1).Run();
+
+            var output = console.Output;
+            var on = output.IndexOf("\u001b[?1000h\u001b[?1006h", StringComparison.Ordinal);
+            var off = output.IndexOf("\u001b[?1006l\u001b[?1000l", StringComparison.Ordinal);
+            Assert.True(on >= 0 && off > on);
+            Assert.Equal(on, output.LastIndexOf("\u001b[?1000h", StringComparison.Ordinal));
+            Assert.Equal(off, output.LastIndexOf("\u001b[?1006l", StringComparison.Ordinal));
+            Assert.InRange(output.IndexOf(FrameStart, StringComparison.Ordinal), on, off);
+            Assert.InRange(output.LastIndexOf(FrameStart, StringComparison.Ordinal), on, off);
+            Assert.True(output.IndexOf("Cashing out", StringComparison.Ordinal) > off);
+            Assert.True(output.IndexOf("Your name?", StringComparison.Ordinal) < on);
+        }
+
+        [Fact]
+        public void App_StopsTheReportsEvenWhenTheGameThrows()
+        {
+            var console = new TestConsole().Width(110).Height(30).Interactive().EmitAnsiSequences();
+            PushSetup(console);  // then no keys at all: the first bet throws
+
+            Assert.Throws<InvalidOperationException>(() => new BlackjackApp(console, TimeSpan.Zero, 1).Run());
+
+            Assert.Contains("\u001b[?1000h\u001b[?1006h", console.Output);
+            Assert.EndsWith("\u001b[?1006l\u001b[?1000l", console.Output);
+        }
     }
 }

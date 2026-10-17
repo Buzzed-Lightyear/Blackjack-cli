@@ -95,16 +95,26 @@ namespace blackjack.Cli
             };
 
             console.Clear();
-            console.Live(screen.Build())
-                .AutoClear(false)
-                .Overflow(VerticalOverflow.Crop)
-                .Cropping(VerticalOverflowCropping.Top)
-                .Start(context =>
-                {
-                    screen.Attach(context);
-                    PlayRounds(game, screen, human, seat, stats, counter);
-                    screen.Detach();
-                });
+            MouseInput.Enable(console);
+            try
+            {
+                console.Live(screen.Build())
+                    .AutoClear(false)
+                    .Overflow(VerticalOverflow.Crop)
+                    .Cropping(VerticalOverflowCropping.Top)
+                    .Start(context =>
+                    {
+                        screen.Attach(context);
+                        PlayRounds(game, screen, human, seat, stats, counter);
+                        screen.Detach();
+                    });
+            }
+            finally
+            {
+                // The terminal keeps reporting the mouse until told to stop, so that is done even
+                // when the game throws.
+                MouseInput.Disable(console);
+            }
 
             ShowSummary(human, bots, stats, settings, game);
         }

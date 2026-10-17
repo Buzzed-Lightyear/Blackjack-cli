@@ -72,6 +72,12 @@ would have done, and the cash-out summary shows how often you followed it. On au
 bets the table minimum, never takes insurance and never stakes a side bet. Keys pressed while the
 bots and dealer play are ignored, so a stray press can't deal the next hand.
 
+Mouse: any key hint in the bar can be clicked instead, and counts as that key: `S stand`, `Space
+deal`, the `E` of `Q/E`, `X` twice to cash out. A click anywhere else does nothing. This works in
+terminals that report mouse clicks, such as Windows Terminal and most Linux and macOS terminals
+(the legacy Windows console does not), and while the table is up most of them select text with
+Shift held. Everything stays keyboard-first; nothing needs the mouse.
+
 ### Doubling, splitting and insurance
 
 The bar lists `A double` only while the hand can be doubled: two cards, enough chips for a second
@@ -182,7 +188,8 @@ key also declines insurance, so it can't double as the insurance key.
 - `blackjack/Cli`: the Spectre.Console front end: `TableScreen` draws the table and follows
   resizes, `TableLayout` shares the rows and columns out for a terminal size, `Line` is a line
   of markup that is cut rather than wrapped, `CardArt` draws the cards, `ConsoleStrategy` is your
-  seat, `FastForward` is the autopilot, `KeyBindings` reads `keys.ini`
+  seat, `FastForward` is the autopilot, `KeyBindings` reads `keys.ini`, `MouseInput` turns the
+  terminal's mouse reporting on and decodes its clicks
 - `blackjack.Tests`: xUnit tests, using a stacked shoe to rig hands; the side-bet house edges are
   checked by exact enumeration of a six-deck shoe, and each bot kind's by simulation
 
