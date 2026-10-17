@@ -11,7 +11,8 @@ using static blackjack.Tests.Cards;
 namespace blackjack.Tests
 {
     // Clicking the key hints in the bar: the terminal's mouse reports are decoded, matched against
-    // where the last frame drew the hints, and turned into the keys the hints name.
+    // where the last frame drew the hints, and turned into the keys the hints name. The same decoder
+    // reads the sequences Windows Terminal sends for the named keys.
     public class MouseTests
     {
         private const string FrameStart = "♠ BLACKJACK";
@@ -58,9 +59,9 @@ namespace blackjack.Tests
         }
 
         // A seat for the human at a one-player table, with the screen it reads keys through.
-        private static (ConsoleStrategy Strategy, TableScreen Screen, FastForward Autopilot) NewSeat(TestConsole console)
+        private static (ConsoleStrategy Strategy, TableScreen Screen, FastForward Autopilot) NewSeat(TestConsole console, KeyBindings? bindings = null)
         {
-            var keys = KeyBindings.Defaults();
+            var keys = bindings ?? KeyBindings.Defaults();
             var autopilot = new FastForward();
             var stats = new SessionStats(100m);
             var screen = new TableScreen(console, keys, autopilot);
@@ -116,17 +117,18 @@ namespace blackjack.Tests
         [InlineData("\u001b[<64;11;29M", 10, 28, false)] // wheel up
         [InlineData("\u001b[<65;11;29M", 10, 28, false)] // wheel down
         [InlineData("\u001b[<2;200;60M", 199, 59, false)] // right button
-        public void Decoder_ReadsAReport_ToItsEnd(string report, int column, int row, bool pressed)
+        public void Decoder_ReadsAMouseReport_ToItsEnd(string report, int column, int row, bool pressed)
         {
             var console = NewConsole();
             console.Input.PushText(report);
             console.Input.PushKey(ConsoleKey.S);
             var taken = new List<ConsoleKeyInfo>();
 
-            var click = MouseInput.TryDecode(First(console), console.Input, taken);
+            var decoded = TerminalInput.TryDecode(First(console), console.Input, taken);
 
-            Assert.Equal(new MouseClick(column, row, pressed), click);
-            Assert.Equal(report.Length - 1, taken.Count);
+            Assert.Equal(new MouseClick(column, row, pressed), decoded?.Click);
+            Assert.Null(decoded?.Key);
+            Assert.Empty(taken);
             Assert.Equal(ConsoleKey.S, First(console).Key); // the key after the report is untouched
         }
 
@@ -135,40 +137,126 @@ namespace blackjack.Tests
         {
             var console = NewConsole();
             console.Input.PushKey(ConsoleKey.Escape);
-            var first = First(console);
             var taken = new List<ConsoleKeyInfo>();
 
-            Assert.Null(MouseInput.TryDecode(first, console.Input, taken));
+            var decoded = TerminalInput.TryDecode(First(console), console.Input, taken);
+
+            Assert.Equal(Chord("Esc").ToKeyInfo(), decoded?.Key);
+            Assert.Null(decoded?.Click);
             Assert.Empty(taken);
-            Assert.Equal(ConsoleKey.Escape, first.Key);
-            Assert.Null(MouseInput.TryDecode(new ConsoleKeyInfo('D', ConsoleKey.D, false, false, false), console.Input, taken));
+            Assert.Null(TerminalInput.TryDecode(new ConsoleKeyInfo('D', ConsoleKey.D, false, false, false), console.Input, taken));
+        }
+
+        [Theory]
+        [InlineData("4", "4")]           // Escape then a digit, as when a typed bet is cleared and typed again
+        [InlineData("[<0;3x", "[<0;3x")] // starts like a report and isn't one
+        [InlineData("[<0;3;", "[<0;3;")] // a report cut short
+        [InlineData("[200~", "[200~")]   // a sequence that names no key
+        [InlineData("Oz", "Oz")]
+        public void Decoder_HandsBackTheKeysOfWhatIsNotASequence(string after, string handedBack)
+        {
+            var console = NewConsole();
+            console.Input.PushText("\u001b" + after);
+            var taken = new List<ConsoleKeyInfo>();
+
+            var decoded = TerminalInput.TryDecode(First(console), console.Input, taken);
+
+            Assert.Equal(Chord("Esc").ToKeyInfo(), decoded?.Key);
+            Assert.Equal(handedBack, string.Concat(taken.Select(k => k.KeyChar)));
+        }
+
+        // The sequences Windows Terminal sends for the named keys in virtual terminal input mode,
+        // and DEL for Backspace, come out of the screen as the keys themselves, with nothing left over.
+        [Theory]
+        [InlineData("\u001b[A", ConsoleKey.UpArrow)]
+        [InlineData("\u001b[B", ConsoleKey.DownArrow)]
+        [InlineData("\u001b[C", ConsoleKey.RightArrow)]
+        [InlineData("\u001b[D", ConsoleKey.LeftArrow)]
+        [InlineData("\u001b[H", ConsoleKey.Home)]
+        [InlineData("\u001b[F", ConsoleKey.End)]
+        [InlineData("\u001b[1~", ConsoleKey.Home)]
+        [InlineData("\u001b[2~", ConsoleKey.Insert)]
+        [InlineData("\u001b[3~", ConsoleKey.Delete)]
+        [InlineData("\u001b[4~", ConsoleKey.End)]
+        [InlineData("\u001b[5~", ConsoleKey.PageUp)]
+        [InlineData("\u001b[6~", ConsoleKey.PageDown)]
+        [InlineData("\u001bOP", ConsoleKey.F1)]
+        [InlineData("\u001bOQ", ConsoleKey.F2)]
+        [InlineData("\u001bOR", ConsoleKey.F3)]
+        [InlineData("\u001bOS", ConsoleKey.F4)]
+        [InlineData("\u001b[11~", ConsoleKey.F1)]
+        [InlineData("\u001b[12~", ConsoleKey.F2)]
+        [InlineData("\u001b[13~", ConsoleKey.F3)]
+        [InlineData("\u001b[14~", ConsoleKey.F4)]
+        [InlineData("\u001b[15~", ConsoleKey.F5)]
+        [InlineData("\u001b[17~", ConsoleKey.F6)]
+        [InlineData("\u001b[18~", ConsoleKey.F7)]
+        [InlineData("\u001b[19~", ConsoleKey.F8)]
+        [InlineData("\u001b[20~", ConsoleKey.F9)]
+        [InlineData("\u001b[21~", ConsoleKey.F10)]
+        [InlineData("\u001b[23~", ConsoleKey.F11)]
+        [InlineData("\u001b[24~", ConsoleKey.F12)]
+        [InlineData("\u001b[1;2A", ConsoleKey.UpArrow)] // with Shift: the key without it
+        [InlineData("\u001b[1;5P", ConsoleKey.F1)]
+        [InlineData("\u001b[3;5~", ConsoleKey.Delete)]
+        [InlineData("\u001bOH", ConsoleKey.Home)]
+        [InlineData("\u001b", ConsoleKey.Escape)]
+        [InlineData("\u007f", ConsoleKey.Backspace)]
+        public void Screen_ReadsTheNamedKeys_FromTheirSequences(string sequence, ConsoleKey key)
+        {
+            var console = NewConsole(100, 30);
+            var (_, screen, _) = NewSeat(console);
+            console.Input.PushText(sequence);
+            console.Input.PushKey(ConsoleKey.S);
+
+            var read = screen.ReadKey();
+
+            Assert.Equal(key, read.Key);
+            Assert.Equal(key switch { ConsoleKey.Escape => '\u001b', ConsoleKey.Backspace => '\b', _ => '\0' }, read.KeyChar);
+            Assert.Equal(ConsoleKey.S, screen.ReadKey().Key); // the key after the sequence, and nothing in between
+            Assert.False(console.Input.IsKeyAvailable());
         }
 
         [Fact]
-        public void Decoder_HandsBackTheKeysOfWhatIsNotAReport()
+        public void Screen_MatchesBindingsToNamedKeys_AndWaitLeaksNoSequence()
         {
-            // Escape then a digit, as when a typed bet is cleared and typed again.
-            var console = NewConsole();
-            console.Input.PushKey(ConsoleKey.Escape);
+            var console = NewConsole(100, 30);
+            var keys = KeyBindings.Defaults();
+            keys.Set(KeyAction.Hit, Chord("F5"));
+            keys.Set(KeyAction.Stand, Chord("Down"));
+            keys.Set(KeyAction.Book, Chord("Home"));
+            var (strategy, screen, _) = NewSeat(console, keys);
+            console.Input.PushText("\u001b[15~");
+            console.Input.PushText("\u001b[B");
+
+            Assert.Equal(Move.Hit, strategy.DecideMove(HandOf("10h 6c"), C("10s"), new MoveOptions(true, false), Tables.Fresh()));
+            Assert.Equal(Move.Stand, strategy.DecideMove(HandOf("10h 6c"), C("10s"), new MoveOptions(true, false), Tables.Fresh()));
+            Assert.Contains("F5 HIT · Down stand", console.Output); // the book's advice, in capitals
+
+            // While the table animates, Home toggles the book and Insert is dropped whole.
+            screen.Refresh();
+            console.Input.PushText("\u001b[1~");
+            console.Input.PushText("\u001b[2~");
+            screen.Wait(TimeSpan.FromMilliseconds(1));
+
+            Assert.False(screen.ShowBook);
+            Assert.False(console.Input.IsKeyAvailable());
+        }
+
+        [Fact]
+        public void Betting_EditsATypedAmount_WithBackspaceSentAsDel()
+        {
+            var console = NewConsole(100, 30);
+            var (strategy, _, _) = NewSeat(console);
             console.Input.PushKey(ConsoleKey.D4);
-            var taken = new List<ConsoleKeyInfo>();
+            console.Input.PushKey(ConsoleKey.D5);
+            console.Input.PushCharacter('\u007f'); // Backspace, as Windows Terminal sends it
+            console.Input.PushKey(ConsoleKey.D0);
+            console.Input.PushKey(ConsoleKey.Spacebar);
 
-            Assert.Null(MouseInput.TryDecode(First(console), console.Input, taken));
-            Assert.Equal(new[] { ConsoleKey.D4 }, taken.Select(k => k.Key));
-
-            // A sequence that starts like a report and isn't one.
-            console.Input.PushText("\u001b[<0;3x");
-            taken.Clear();
-
-            Assert.Null(MouseInput.TryDecode(First(console), console.Input, taken));
-            Assert.Equal("[<0;3x", string.Concat(taken.Select(k => k.KeyChar)));
-
-            // A report cut short.
-            console.Input.PushText("\u001b[<0;3;");
-            taken.Clear();
-
-            Assert.Null(MouseInput.TryDecode(First(console), console.Input, taken));
-            Assert.Equal("[<0;3;", string.Concat(taken.Select(k => k.KeyChar)));
+            Assert.Equal(40m, strategy.DecideBet(100m, Tables.Fresh()));
+            Assert.Contains("45_", console.Output);
+            Assert.Contains("40_", console.Output);
         }
 
         [Fact]

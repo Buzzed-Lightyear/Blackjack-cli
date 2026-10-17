@@ -213,7 +213,8 @@ key also declines insurance, so it can't double as the insurance key.
   resizes, `TableLayout` shares the rows and columns out for a terminal size, `Line` is a line
   of markup that is cut rather than wrapped, `CardArt` draws the cards, `ConsoleStrategy` is your
   seat, `FastForward` is the autopilot, `KeyBindings` reads `keys.ini`, `MouseInput` turns the
-  terminal's mouse reporting on and decodes its clicks
+  terminal's mouse reporting on, `TerminalInput` decodes the sequences the terminal sends for
+  clicks and, under Windows Terminal, for the named keys
 - `blackjack.Tests`: xUnit tests, using a stacked shoe to rig hands; the side-bet house edges are
   checked by exact enumeration of a six-deck shoe, and each bot kind's by simulation
 

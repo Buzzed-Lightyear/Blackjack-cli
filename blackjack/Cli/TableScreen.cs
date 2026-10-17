@@ -54,7 +54,7 @@ namespace blackjack.Cli
         // Where the last frame drew each key hint of the bar, as click targets.
         private readonly List<HintSpan> hints = new();
 
-        // Keys read while checking for a mouse report that turned out not to be one, to be read next.
+        // Keys read while checking for a sequence that turned out not to be one, to be read next.
         private readonly Queue<ConsoleKeyInfo> unread = new();
 
         public TableScreen(IAnsiConsole console, KeyBindings keys, FastForward fastForward)
@@ -215,10 +215,10 @@ namespace blackjack.Cli
         // A key is waiting: one put back after a mouse check, or one at the console.
         private bool KeyAvailable => unread.Count > 0 || console.Input.IsKeyAvailable();
 
-        // The next key as the game should see it, read with readRaw. A mouse report is read to its
-        // end: a press on a hint in the bar becomes the key the hint names, and any other report is
-        // nothing at all (null). Keys taken while checking for a report that wasn't one are kept,
-        // and come first next time.
+        // The next key as the game should see it, read with readRaw. A sequence the console passed
+        // through is read to its end: a named key comes out as that key, a press on a hint in the
+        // bar as the key the hint names, and any other mouse report as nothing at all (null). Keys
+        // taken while checking for a sequence that wasn't one are kept, and come next.
         private ConsoleKeyInfo? NextKey(Func<ConsoleKeyInfo?> readRaw)
         {
             if (unread.Count > 0)
@@ -232,17 +232,23 @@ namespace blackjack.Cli
             }
 
             var taken = new List<ConsoleKeyInfo>();
-            if (MouseInput.TryDecode(raw, console.Input, taken) is not { } click)
+            var decoded = TerminalInput.TryDecode(raw, console.Input, taken);
+            foreach (var key in taken)
             {
-                foreach (var key in taken)
-                {
-                    unread.Enqueue(key);
-                }
+                unread.Enqueue(key);
+            }
 
+            if (decoded is not { } sequence)
+            {
                 return raw;
             }
 
-            return click.Pressed && HintAt(click.Column, click.Row) is { } chord ? chord.ToKeyInfo() : null;
+            if (sequence.Key is { } named)
+            {
+                return named;
+            }
+
+            return sequence.Click is { Pressed: true } click && HintAt(click.Column, click.Row) is { } chord ? chord.ToKeyInfo() : null;
         }
 
         public bool HandleToggle(ConsoleKeyInfo key)
