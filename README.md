@@ -40,29 +40,30 @@ the way up at the default penetration. Under it is the shoe's number and the dec
 `cut`, so the shoe is reshuffled after the round. With one-line chips the shoe is one line too,
 at the right end of the dealer's (`shoe 1 ▒▒│▒▒▒▒░░░ 3.4 decks`): the cards left fill the bar
 from the left and it drains towards the cut mark; the decks go when the dealer's line leaves no
-room for them, and the shoe with them. Below are the other seats in the order they
-act, each bot's kind in grey under its name (the tag row goes when the terminal is only 16 rows),
-with a `▼ YOU` marker where you sit; under 90 columns a table with more than three bots wraps onto
-two rows of seats, when the height leaves a line for the log. Your seat is the panel at the
-bottom, taller with the tiles, with the Hi-Lo count in a panel beside it or, under 70 columns, on
-one line below it (`Hi-Lo running +3 · true +1.2 · 4.5 decks`). Beside your hand's figures, when
-the panel has room after the cards and them, your chips stand in stacks seen from the front, one
-per denomination from the fewest chips that make your balance: 500s purple, 100s black with a
-white face, 25s green, 5s red and 1s white, each a face with the value on top and an edge row per
-chip, and `×12` under a stack taller than the panel; a fraction of a chip is left out. While a
-hand is on the table its bet is a pile of its own chips with `bet 20` under it, left out before
-the stacks when the room runs short. With several hands the stacks move to the right of the panel
-and go when the hand lines leave no room; on a terminal with one-line chips there are none. Then
-come the latest events, as many as there are rows left, then a bar that always says what the keys
-do right now. A line that would not fit its region is cut short with `…` rather than wrapped, so
-on a narrow terminal the bar's hints get shorter but the keys still work.
+room for them, and the shoe with them. Below are the other seats in the order they act, each
+bot's kind in grey under its name with its stake beside it while it has a bet down, `count · 40`
+(the tag row goes when the terminal is only 16 rows), with a `▼ YOU` marker where you sit; under
+90 columns a table with more than three bots wraps onto two rows of seats, when the height leaves
+a line for the log. Your seat is the panel at the bottom, taller with the tiles, with the Hi-Lo
+count in a panel beside it or, under 70 columns, on one line below it
+(`Hi-Lo running +3 · true +1.2 · 4.5 decks`). Beside your hand's figures, when the panel has room
+after the cards and them, your chips stand in stacks seen from the front, one per denomination
+from the fewest chips that make your balance: 500s purple, 100s black with a white face, 25s
+green, 5s red and 1s white, each a face with the value on top and an edge row per chip, and `×12`
+under a stack taller than the panel; a fraction of a chip is left out. While a hand is on the
+table its bet is a pile of its own chips with `bet 20` under it, left out before the stacks when
+the room runs short. With several hands the stacks move to the right of the panel and go when the
+hand lines leave no room; on a terminal with one-line chips there are none. Then come the latest
+events, as many as there are rows left, then a bar that always says what the keys do right now. A
+line that would not fit its region is cut short with `…` rather than wrapped, so on a narrow
+terminal the bar's hints get shorter but the keys still work.
 
 Every region's size depends only on the terminal size and the number of seats, never on the cards
 or the log, so nothing moves between frames; what does not fit a region is cropped inside it.
 Resize the terminal whenever you like: the table notices while it waits for a key or animates a
 deal, and redraws from a clear screen at the new size. Below 60 columns or 16 rows it makes way
-for `Terminal too small` with the size it needs; keys are still read, so make the window bigger
-or cash out with `X` twice.
+for `Terminal too small` with the size it needs and a reminder that the keys still work, so make
+the window bigger or cash out with `X` twice between hands.
 
 Default keys, all under the left hand:
 
@@ -73,37 +74,51 @@ Default keys, all under the left hand:
 | | digits | type an exact bet (`Backspace` and `Esc` to fix it) |
 | | `T` / `G` | add the minimum to the first / second side bet |
 | | `F` | autopilot: the book plays your seat while you watch |
-| | `R` | skip to the next shoe |
+| | `R` twice | play out the shoe: autopilot at the minimum until the next shoe |
 | | `X` twice | cash out |
 | Dealer shows an ace | `Z` / `Space` | take / decline insurance |
 | Your move | `D` / `S` | hit / stand |
 | | `A` / `W` | double down / split, when the bar offers them |
-| Any time | `B` / `C` | show or hide the book's advice / the count |
+| Any time | `B` / `C` | hide or show the book's advice / the count (the bar says which) |
 | On autopilot | `Q` / `E` | slower / faster |
-| | `R` | skip one more shoe |
+| | `R` | play out one more shoe |
 | | any other key | stop after this hand |
+
+Between hands the bar reads `PLACE YOUR BET  ◀ 10 ▶  Space deal · Q/E -/+10 or type it · T/G side
+bets`, with the deal key right after the amount so that a narrow terminal cuts the other hints
+first. A typed amount outside the table's limits shows what is wrong in place of the deal hint,
+and your seat keeps the last valid bet until it is fixed.
 
 The book's choice is highlighted on every move. If you go against it, the log says what the book
 would have done, and the cash-out summary shows how often you followed it. On autopilot your seat
-bets the table minimum, never takes insurance and never stakes a side bet. Keys pressed while the
-bots and dealer play are ignored, so a stray press can't deal the next hand.
+bets the table minimum, never takes insurance and never stakes a side bet. `R` plays out the rest
+of the shoe that way at full speed; since it wagers your chips for every hand to the cut card, it
+asks once (`R` again to confirm, any other key keeps you at the table), and the summary gives the
+autopilot's hands and net on their own rows. Keys pressed while the bots and dealer play are
+ignored, so a stray press can't deal the next hand.
 
 ### Doubling, splitting and insurance
 
 The bar lists `A double` only while the hand can be doubled: two cards, enough chips for a second
 bet, and whatever the table rules allow. Doubling doubles the bet, takes exactly one more card and
-stands. It lists `W split` only for a pair (any two ten-value cards count) when you hold fewer hands
-than the table allows and can cover another bet. Splitting moves the second card to a new hand with
-the same bet, deals a card to each, and plays the first hand to the end before the second; a split
-hand can be split again. Split aces get one card each and stand; a two-card 21 after a split is an
-ordinary 21, not a blackjack. Your seat shows every hand with its bet, a `▶` on the one being
-played, and each hand's result once the round is settled; the panel header gives the round's net
-when there is more than one.
+stands; the log says so (`You double the bet to 20 and draw 9♠ for 20.`) and the seat marks it
+(`bet 20 (doubled)`). It lists `W split` only for a pair (any two ten-value cards count) when you
+hold fewer hands than the table allows and can cover another bet. Splitting moves the second card
+to a new hand with the same bet, deals a card to each, and plays the first hand to the end before
+the second; a split hand can be split again. Split aces get one card each and stand; a two-card 21
+after a split is an ordinary 21, not a blackjack. Your seat shows every hand with its bet, a `▶`
+on the one being played, `stood` on a hand that is done, and each hand's result once the round is
+settled (a push is grey, so that a yellow panel always means your move); the panel header gives
+the hands' net when there is more than one, and the whole round's net after it
+(`LOSE -10 · ROUND -15`) whenever insurance or a side bet made the two differ. The log closes such
+a round with `Round net -15.`
 
 When the dealer shows an ace, everyone who can afford half their bet is asked about insurance before
 the dealer peeks. `Z` takes it for half the bet, `Space` declines. A dealer blackjack pays insurance
 2:1 (and the hand loses, unless it is a blackjack too, which pushes); otherwise the insurance is
-lost and play goes on. The book never takes insurance.
+lost and play goes on. The log says what the peek found (`Dealer peeks: no blackjack.`), and your
+seat keeps the stake on the bet row, `bet 10 · ins 5` while the dealer has yet to peek and then
+`ins +10` or `ins -5`, until the next round. The book never takes insurance.
 
 ### Rules
 
@@ -123,11 +138,14 @@ There is no surrender.
 ### Side bets
 
 The table offers two side bets, 21+3 and Bust It by default; the setup can swap in any two of the
-six below. While betting, `T` and `G` add the table minimum to the first and second side bet, and
-wrap back to nothing once the stake would pass its cap: a side bet can be at most the main bet, as
-far as your chips stretch after the main bet. The stakes show in your seat with their keys, are
-remembered between hands like the main bet, and are trimmed when a smaller main bet or stack no
-longer covers them. The bots never stake them.
+six below. Setup prints each offered bet's pay table on a grey line as it asks about them, and the
+whole catalogue when you change them; the log shows the two offered tables again while the first
+bets are placed, and a bet's table the first time you stake it in a session (`21+3 pays suited
+trips 100, straight flush 40, ...`). While betting, `T` and `G` add the table minimum to the first
+and second side bet, and wrap back to nothing once the stake would pass its cap: a side bet can be
+at most the main bet, as far as your chips stretch after the main bet. The stakes show in your seat
+with their keys, are remembered between hands like the main bet, and are trimmed when a smaller
+main bet or stack no longer covers them. The bots never stake them.
 
 Odds are "to 1": a win returns the stake plus the stake times the odds. House edges are for six
 decks; Bust It depends on the soft-17 rule.
@@ -142,8 +160,10 @@ decks; Bust It depends on the soft-17 rule.
 | Lucky Lucky | at the deal: your two cards and the dealer's upcard, aces 1 or 11 | suited 7-7-7 200, suited 6-7-8 100, 7-7-7 50, 6-7-8 30, suited 21 15, 21 3, 20 or 19 2 | 2.66% |
 
 Deal-time bets are settled right after the dealer peeks, so the log and your seat show them before
-you play. The cash-out summary counts the side bets placed and won and gives their net on its own
-row, apart from the main game's.
+you play. Each result stays beside the next round's stake while you bet (`T 21+3 10 (+300)`), and
+the round's closing log line and the seat header give the round's net with the side bets in. The
+cash-out summary counts the side bets placed and won and gives their net on its own row, apart
+from the main game's.
 
 ## Bots
 
@@ -163,9 +183,11 @@ With at least one bot at the table, setup asks "Bot types?". Answer with one kin
 The default is `basic`. The mix and the gambler's hunches are drawn from the session seed, so the
 same seed seats the same bots and they make the same choices.
 
-Each bot's tag shows in grey under its name on the table. The cash-out summary adds a row per bot,
-such as `Bot 1 (counter)`, with its net against the chips it started with; a bot that went broke and
-left the table is still listed.
+Each bot's tag shows in grey under its name on the table, with its stake after it (`gambler · 40`)
+from the moment it bets until the next deal, and the log notes a bet that differs from the bot's
+last one: `Bot 1 bets 40.`, or `Bot 1 bets 40 at true +3.` for a counter. The cash-out summary
+adds a row per bot, such as `Bot 1 (counter)`, with its net against the chips it started with; a
+bot that went broke and left the table is still listed.
 
 ## Replaying a session
 
