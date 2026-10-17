@@ -70,6 +70,10 @@ namespace blackjack.Cli
 
         public static string Name(Player player) => Markup.Escape(player.Name);
 
+        // A side bet's pay table on one grey line: "21+3: suited trips 100, straight flush 40, ...".
+        public static string SideBetDescription(ISideBet bet) =>
+            $"[grey]{Markup.Escape(bet.Name)}: {Markup.Escape(bet.Description)}[/]";
+
         // The brief form leaves out the payout and the minimum, for a header with no room for them.
         public static string DescribeRules(Rules rules, bool brief = false)
         {
@@ -124,8 +128,9 @@ namespace blackjack.Cli
 
         public string HandTag(Hand hand) => HandTag(human, hand);
 
+        // Phrased as what the key does, like every other hint in the bar.
         public string Toggles() =>
-            $"[grey]{Key(KeyAction.Book)} book {OnOff(ShowBook)} · {Key(KeyAction.Count)} count {OnOff(ShowCount)}[/]";
+            $"[grey]{Key(KeyAction.Book)} {HideOrShow(ShowBook)} book · {Key(KeyAction.Count)} {HideOrShow(ShowCount)} count[/]";
 
         public void Refresh()
         {
@@ -269,12 +274,13 @@ namespace blackjack.Cli
         }
 
         // Shown in place of the table while the terminal can't hold one; keys are still read, so
-        // the player can make it bigger or cash out.
-        private static IRenderable TooSmall(int width, int height) =>
+        // the player can make it bigger or cash out, and the message says so.
+        private IRenderable TooSmall(int width, int height) =>
             Align.Center(
                 new Rows(
                     new Markup("[bold red]Terminal too small[/]"),
-                    new Markup($"[grey]Blackjack needs {TableLayout.MinWidth}×{TableLayout.MinHeight}, this is {width}×{height}[/]")),
+                    new Markup($"[grey]Blackjack needs {TableLayout.MinWidth}×{TableLayout.MinHeight}, this is {width}×{height}[/]"),
+                    new Markup($"[grey]keys still work · {Key(KeyAction.CashOut)} twice between hands cashes out[/]")),
                 VerticalAlignment.Middle);
 
         // The round and the rules on the left; the shoe, its seed and your chips on the right. The
@@ -397,9 +403,17 @@ namespace blackjack.Cli
             return done ? $"[grey]{Name(seat)}[/]" : $"[bold]{Name(seat)}[/]";
         }
 
-        // A bot's type under its name; nothing under yours.
-        private string SeatTag(Player seat) =>
-            seat != human && Bots.TypeOf(seat.Strategy) is { } type ? $"[grey]{Bots.Tag(type)}[/]" : "";
+        // A bot's type under its name, with its stake while it has one; nothing under yours.
+        private string SeatTag(Player seat)
+        {
+            if (seat == human || Bots.TypeOf(seat.Strategy) is not { } type)
+            {
+                return "";
+            }
+
+            var stake = seat.Hands.Sum(h => h.Bet);
+            return stake > 0m ? $"[grey]{Bots.Tag(type)} · {Money(stake)}[/]" : $"[grey]{Bots.Tag(type)}[/]";
+        }
 
         // The tag row is the one the layout drops when the terminal has no row for it.
         private IEnumerable<Func<Player, string>> SeatRowsFor(TableLayout layout) =>
@@ -470,9 +484,10 @@ namespace blackjack.Cli
                     info.Add(YourTotal(hand));
                 }
 
-                info.Add(PendingBet is { } pending
+                var bet = PendingBet is { } pending
                     ? $"next bet [bold yellow]{pending}[/]"
-                    : hand is not null ? $"bet [bold]{Money(hand.Bet)}[/]" : "");
+                    : hand is not null ? BetLabel(hand) : "";
+                info.Add($"{bet}{InsuranceTag()}");
                 info.AddRange(SideBetLines(wide: false));
                 info.Add($"[grey]chips {Money(human.Chips)}[/]");
 
@@ -483,7 +498,8 @@ namespace blackjack.Cli
             }
             else
             {
-                var lines = hands.Select(h => HandLine(h, hands.Count > 1)).ToList();
+                // Insurance was taken on the first hand, before any split.
+                var lines = hands.Select((h, i) => $"{HandLine(h, hands.Count > 1)}{(i == 0 ? InsuranceTag() : "")}").ToList();
                 if (PendingBet is { } pending)
                 {
                     lines.Add($"next bet [bold yellow]{pending}[/]");
@@ -508,23 +524,46 @@ namespace blackjack.Cli
                 .Expand();
         }
 
+        // A finished split hand says so while the round is still on, as a bot's would.
         private string HandLine(Hand hand, bool several)
         {
             var marker = !several ? "" : hand == game.CurrentHand ? "[bold yellow]▶[/] " : "  ";
             var cards = string.Join(" ", hand.Cards.Select(CardArt.Chip));
-            var tail = hand.Outcome is { } outcome ? OutcomeLabel(hand, outcome).Text : $"bet [bold]{Money(hand.Bet)}[/]";
-            return $"{marker}{cards}  {YourTotal(hand)}  {tail}";
+            var stood = several && hand.Outcome is null && hand.IsStood ? "[grey]stood[/]  " : "";
+            var tail = hand.Outcome is { } outcome ? OutcomeLabel(hand, outcome).Text : BetLabel(hand);
+            return $"{marker}{cards}  {YourTotal(hand)}  {stood}{tail}";
         }
 
-        // Your side bets: the stakes being chosen with their keys, or this round's stakes and how
-        // they came out. The wide form has room for the winning hand's name.
+        private static string BetLabel(Hand hand) => $"bet [bold]{Money(hand.Bet)}[/]{(hand.IsDoubled ? " (doubled)" : "")}";
+
+        // " · ins 5" while the dealer has yet to peek, then " · ins +10" or " · ins -5" until the
+        // next round.
+        private string InsuranceTag()
+        {
+            if (human.Insurance == 0m)
+            {
+                return "";
+            }
+
+            return game.Phase == Phase.Insurance
+                ? $" · ins [bold]{Money(human.Insurance)}[/]"
+                : $" · ins {SignedMoney(human.InsurancePayout - human.Insurance)}";
+        }
+
+        // Your side bets: the stakes being chosen with their keys (each beside how the last round's
+        // stake on that bet came out), or this round's stakes and how they came out. The wide form
+        // has room for the winning hand's name.
         private IEnumerable<string> SideBetLines(bool wide)
         {
             if (PendingSideBets is { } pending)
             {
                 for (var i = 0; i < Math.Min(pending.Count, game.SideBets.Count); i++)
                 {
-                    yield return $"{Key(SideBetKeys[i])} {Markup.Escape(game.SideBets[i].Name)} [bold yellow]{pending[i]}[/]";
+                    var bet = game.SideBets[i];
+                    var last = human.SideBets.FirstOrDefault(s => s.Bet == bet && s.IsResolved) is { } settled
+                        ? $" ({SignedMoney(settled.Net)})"
+                        : "";
+                    yield return $"{Key(SideBetKeys[i])} {Markup.Escape(bet.Name)} [bold yellow]{pending[i]}[/]{last}";
                 }
 
                 yield break;
@@ -553,18 +592,19 @@ namespace blackjack.Cli
             if (hands.Count == 1 && hands[0].Outcome is { } outcome)
             {
                 var (text, colour) = OutcomeLabel(hands[0], outcome);
-                return ($" {text} ", colour);
+                return ($" {text}{RoundNet(hands)} ", colour);
             }
 
             if (hands.Count > 1 && hands.All(h => h.Outcome is not null))
             {
                 var net = hands.Sum(h => h.Payout - h.Bet);
-                return net switch
+                var (text, colour) = net switch
                 {
-                    > 0m => ($" [bold green]{hands.Count} HANDS +{Money(net)}[/] ", Color.Green),
-                    < 0m => ($" [bold red]{hands.Count} HANDS -{Money(-net)}[/] ", Color.Red),
-                    _ => ($" [bold yellow]{hands.Count} HANDS PUSH[/] ", Color.Yellow)
+                    > 0m => ($"[bold green]{hands.Count} HANDS +{Money(net)}[/]", Color.Green),
+                    < 0m => ($"[bold red]{hands.Count} HANDS -{Money(-net)}[/]", Color.Red),
+                    _ => ($"[bold grey]{hands.Count} HANDS ±0[/]", Color.Grey)
                 };
+                return ($" {text}{RoundNet(hands)} ", colour);
             }
 
             if (game.Phase == Phase.Insurance && game.CurrentPlayer == human)
@@ -581,6 +621,14 @@ namespace blackjack.Cli
             return ($" [aqua]YOU · {Name(human)}[/] ", Color.Aqua);
         }
 
+        // " · ROUND +250" when insurance or a side bet made the round's net differ from the hands'.
+        private string RoundNet(List<Hand> hands)
+        {
+            var net = human.RoundNet;
+            return net == hands.Sum(h => h.Payout - h.Bet) ? "" : $" [bold]· ROUND {SignedMoney(net)}[/]";
+        }
+
+        // A push is grey, so that yellow means your turn and nothing else.
         private static (string Text, Color Colour) OutcomeLabel(Hand hand, Outcome outcome)
         {
             var net = Money(Math.Abs(hand.Payout - hand.Bet));
@@ -588,7 +636,7 @@ namespace blackjack.Cli
             {
                 Outcome.Blackjack => ($"[bold green]BLACKJACK +{net}[/]", Color.Green),
                 Outcome.Win => ($"[bold green]WIN +{net}[/]", Color.Green),
-                Outcome.Push => ("[bold yellow]PUSH[/]", Color.Yellow),
+                Outcome.Push => ("[bold grey]PUSH ±0[/]", Color.Grey),
                 _ when hand.IsBust => ($"[bold red]BUST -{net}[/]", Color.Red),
                 _ => ($"[bold red]LOSE -{net}[/]", Color.Red)
             };
@@ -616,7 +664,7 @@ namespace blackjack.Cli
             if (!ShowCount)
             {
                 lines.Add("[grey]hidden[/]");
-                lines.Add($"[grey]{Key(KeyAction.Count)} to show[/]");
+                lines.Add($"[grey]{Key(KeyAction.Count)} show count[/]");
             }
             else
             {
@@ -637,7 +685,7 @@ namespace blackjack.Cli
         {
             if (!ShowCount)
             {
-                return new Line($"[grey]Hi-Lo hidden · {Key(KeyAction.Count)} to show[/]");
+                return new Line($"[grey]Hi-Lo hidden · {Key(KeyAction.Count)} show count[/]");
             }
 
             return new Line(
@@ -704,8 +752,8 @@ namespace blackjack.Cli
             var what = fastForward.SkippingShoes
                 ? $"[bold aqua]▶▶ SKIPPING TO THE NEXT SHOE[/]{(fastForward.ShoesLeft > 1 ? $" [aqua]({fastForward.ShoesLeft} to go)[/]" : "")}"
                 : "[bold aqua]▶▶ AUTOPILOT[/] [grey]the book plays your seat[/]";
-            var line1 = $"{what}  ·  speed [bold]{fastForward.Speed.ToString().ToLowerInvariant()}[/]"
-                + $"  ·  {fastForward.Hands} hands  ·  chips {SignedMoney(fastForward.Net)}";
+            var line1 = $"{what} · speed [bold]{fastForward.Speed.ToString().ToLowerInvariant()}[/]"
+                + $" · {fastForward.Hands} hands · chips {SignedMoney(fastForward.Net)}";
             var line2 = $"[grey]{Key(KeyAction.Slower)} slower · {Key(KeyAction.Faster)} faster · "
                 + $"{Key(KeyAction.NextShoe)} +1 shoe · any other key stops after this hand[/]";
             return (line1, line2, BarTone.Waiting);
@@ -741,13 +789,13 @@ namespace blackjack.Cli
             {
                 Outcome.Blackjack => $"[green]+{net}[/]",
                 Outcome.Win => $"[green]+{net}[/]",
-                Outcome.Push => "[yellow]push[/]",
+                Outcome.Push => "[grey]push[/]",
                 _ when hand.IsBust => $"[red]bust -{net}[/]",
                 _ => $"[red]-{net}[/]"
             };
         }
 
-        private static string OnOff(bool on) => on ? "on" : "off";
+        private static string HideOrShow(bool shown) => shown ? "hide" : "show";
 
         // 1.5 -> "3:2", 1.2 -> "6:5".
         private static string Ratio(decimal payout)
