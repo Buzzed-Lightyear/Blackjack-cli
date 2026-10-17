@@ -31,15 +31,31 @@ the way through starts a game with two bots on the book. The game needs a termin
 The table fills the terminal. The header shows the round and the rules on the left, and the shoe
 in play, its seed and your chips on the right; as the terminal narrows the payout and minimum make
 way for them, then the rest of the rules. The dealer is under it, with one-line chips on fewer
-than 23 rows, three-line card tiles from 23 rows and five-line tiles from 36. Below are the other
-seats in the order they act, each bot's kind in grey under its name (the tag row goes when the
-terminal is only 16 rows), with a `▼ YOU` marker where you sit; under 90 columns a table with more
-than three bots wraps onto two rows of seats, when the height leaves a line for the log. Your seat
-is the panel at the bottom, taller with the tiles, with the Hi-Lo count in a panel beside it or,
-under 70 columns, on one line below it (`Hi-Lo running +3 · true +1.2 · 4.5 decks`). Then come
-the latest events, as many as there are rows left, then a bar that always says what the keys do
-right now. A line that would not fit its region is cut short with `…` rather than wrapped, so on
-a narrow terminal the bar's hints get shorter but the keys still work.
+than 23 rows, three-line card tiles from 23 rows and five-line tiles from 36. From 80 columns the
+shoe stands at the right of the dealer's region, seen from the side: a stack of card backs as tall
+as the tiles while the shoe is full, a row shorter for every third (or fifth) of the cards dealt
+and never gone while any are left, with the cut card as a yellow row at its height, a quarter of
+the way up at the default penetration. Under it is the shoe's number and the decks left
+(`shoe 2 · 4.1 decks`); once the deal reaches the cut card the yellow row goes and the label says
+`cut`, so the shoe is reshuffled after the round. With one-line chips the shoe is one line too,
+at the right end of the dealer's (`shoe 1 ▒▒│▒▒▒▒░░░ 3.4 decks`): the cards left fill the bar
+from the left and it drains towards the cut mark; the decks go when the dealer's line leaves no
+room for them, and the shoe with them. Below are the other seats in the order they
+act, each bot's kind in grey under its name (the tag row goes when the terminal is only 16 rows),
+with a `▼ YOU` marker where you sit; under 90 columns a table with more than three bots wraps onto
+two rows of seats, when the height leaves a line for the log. Your seat is the panel at the
+bottom, taller with the tiles, with the Hi-Lo count in a panel beside it or, under 70 columns, on
+one line below it (`Hi-Lo running +3 · true +1.2 · 4.5 decks`). Beside your hand's figures, when
+the panel has room after the cards and them, your chips stand in stacks seen from the front, one
+per denomination from the fewest chips that make your balance: 500s purple, 100s black with a
+white face, 25s green, 5s red and 1s white, each a face with the value on top and an edge row per
+chip, and `×12` under a stack taller than the panel; a fraction of a chip is left out. While a
+hand is on the table its bet is a pile of its own chips with `bet 20` under it, left out before
+the stacks when the room runs short. With several hands the stacks move to the right of the panel
+and go when the hand lines leave no room; on a terminal with one-line chips there are none. Then
+come the latest events, as many as there are rows left, then a bar that always says what the keys
+do right now. A line that would not fit its region is cut short with `…` rather than wrapped, so
+on a narrow terminal the bar's hints get shorter but the keys still work.
 
 Every region's size depends only on the terminal size and the number of seats, never on the cards
 or the log, so nothing moves between frames; what does not fit a region is cropped inside it.
@@ -181,8 +197,9 @@ key also declines insurance, so it can't double as the insurance key.
   `Bots`, which builds and names them
 - `blackjack/Cli`: the Spectre.Console front end: `TableScreen` draws the table and follows
   resizes, `TableLayout` shares the rows and columns out for a terminal size, `Line` is a line
-  of markup that is cut rather than wrapped, `CardArt` draws the cards, `ConsoleStrategy` is your
-  seat, `FastForward` is the autopilot, `KeyBindings` reads `keys.ini`
+  of markup that is cut rather than wrapped, `CardArt` draws the cards, `ShoeArt` the shoe and
+  `ChipArt` the chip stacks, `ConsoleStrategy` is your seat, `FastForward` is the autopilot,
+  `KeyBindings` reads `keys.ini`
 - `blackjack.Tests`: xUnit tests, using a stacked shoe to rig hands; the side-bet house edges are
   checked by exact enumeration of a six-deck shoe, and each bot kind's by simulation
 
