@@ -364,6 +364,14 @@ namespace blackjack.Tests
         }
 
         [Fact]
+        public void LogChip_IsBoldTextInTheSuitColour_NotATile()
+        {
+            Assert.Equal("[bold red]10♥[/]", CardArt.LogChip(C("10h")));
+            Assert.Equal("[bold white]A♠[/]", CardArt.LogChip(C("As")));
+            Assert.Equal("[black on white]A♠[/]", CardArt.Chip(C("As")));
+        }
+
+        [Fact]
         public void Line_CutsALongLineShort_InsteadOfWrapping()
         {
             var console = NewConsole(10, 3);

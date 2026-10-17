@@ -38,8 +38,10 @@ namespace blackjack.Cli
 
         public const string HiddenChip = "[white on blue]▒▒[/]";
 
-        // A chip with a little padding, for the event log.
-        public static string LogChip(Card card) => $"[{Style(card)}] {card} [/]";
+        // A card in log prose: bold text in the suit's colour on the usual background, so draws on
+        // consecutive lines don't pile up into one white block. White rather than plain bold,
+        // because the log greys every line but the newest.
+        public static string LogChip(Card card) => $"[bold {(card.IsRed ? "red" : "white")}]{card}[/]";
 
         private static string Style(Card card) => card.IsRed ? "red on white" : "black on white";
     }

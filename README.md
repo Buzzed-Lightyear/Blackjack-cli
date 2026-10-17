@@ -35,12 +35,12 @@ than 23 rows, three-line card tiles from 23 rows and five-line tiles from 36. Be
 seats in the order they act, each bot's kind in grey under its name with its stake beside it while
 it has a bet down, `count · 40` (the tag row goes when the terminal is only 16 rows), with a
 `▼ YOU` marker where you sit; under 90 columns a table with more than three bots wraps onto two
-rows of seats, when the height leaves a line for the log. Your seat
-is the panel at the bottom, taller with the tiles, with the Hi-Lo count in a panel beside it or,
-under 70 columns, on one line below it (`Hi-Lo running +3 · true +1.2 · 4.5 decks`). Then come
-the latest events, as many as there are rows left, then a bar that always says what the keys do
-right now. A line that would not fit its region is cut short with `…` rather than wrapped, so on
-a narrow terminal the bar's hints get shorter but the keys still work.
+rows of seats, when the height leaves a line for the log. Your seat is the panel at the bottom,
+taller with the tiles, with the Hi-Lo count in a panel beside it or, under 70 columns, on one line
+below it (`Hi-Lo running +3 · true +1.2 · 4.5 decks`). Then come the latest events, as many as
+there are rows left, then a bar that always says what the keys do right now. A line that would not
+fit its region is cut short with `…` rather than wrapped, so on a narrow terminal the bar's hints
+get shorter but the keys still work.
 
 Every region's size depends only on the terminal size and the number of seats, never on the cards
 or the log, so nothing moves between frames; what does not fit a region is cropped inside it.
@@ -85,14 +85,17 @@ ignored, so a stray press can't deal the next hand.
 
 The bar lists `A double` only while the hand can be doubled: two cards, enough chips for a second
 bet, and whatever the table rules allow. Doubling doubles the bet, takes exactly one more card and
-stands. It lists `W split` only for a pair (any two ten-value cards count) when you hold fewer hands
-than the table allows and can cover another bet. Splitting moves the second card to a new hand with
-the same bet, deals a card to each, and plays the first hand to the end before the second; a split
-hand can be split again. Split aces get one card each and stand; a two-card 21 after a split is an
-ordinary 21, not a blackjack. Your seat shows every hand with its bet, a `▶` on the one being
-played, and each hand's result once the round is settled; the panel header gives the hands' net
-when there is more than one, and the whole round's net after it (`LOSE -10 · ROUND -15`) whenever
-insurance or a side bet made the two differ. The log closes such a round with `Round net -15.`
+stands; the log says so (`You double the bet to 20 and draw 9♠ for 20.`) and the seat marks it
+(`bet 20 (doubled)`). It lists `W split` only for a pair (any two ten-value cards count) when you
+hold fewer hands than the table allows and can cover another bet. Splitting moves the second card
+to a new hand with the same bet, deals a card to each, and plays the first hand to the end before
+the second; a split hand can be split again. Split aces get one card each and stand; a two-card 21
+after a split is an ordinary 21, not a blackjack. Your seat shows every hand with its bet, a `▶`
+on the one being played, `stood` on a hand that is done, and each hand's result once the round is
+settled (a push is grey, so that a yellow panel always means your move); the panel header gives
+the hands' net when there is more than one, and the whole round's net after it
+(`LOSE -10 · ROUND -15`) whenever insurance or a side bet made the two differ. The log closes such
+a round with `Round net -15.`
 
 When the dealer shows an ace, everyone who can afford half their bet is asked about insurance before
 the dealer peeks. `Z` takes it for half the bet, `Space` declines. A dealer blackjack pays insurance

@@ -486,7 +486,7 @@ namespace blackjack.Cli
 
                 var bet = PendingBet is { } pending
                     ? $"next bet [bold yellow]{pending}[/]"
-                    : hand is not null ? $"bet [bold]{Money(hand.Bet)}[/]" : "";
+                    : hand is not null ? BetLabel(hand) : "";
                 info.Add($"{bet}{InsuranceTag()}");
                 info.AddRange(SideBetLines(wide: false));
                 info.Add($"[grey]chips {Money(human.Chips)}[/]");
@@ -524,13 +524,17 @@ namespace blackjack.Cli
                 .Expand();
         }
 
+        // A finished split hand says so while the round is still on, as a bot's would.
         private string HandLine(Hand hand, bool several)
         {
             var marker = !several ? "" : hand == game.CurrentHand ? "[bold yellow]▶[/] " : "  ";
             var cards = string.Join(" ", hand.Cards.Select(CardArt.Chip));
-            var tail = hand.Outcome is { } outcome ? OutcomeLabel(hand, outcome).Text : $"bet [bold]{Money(hand.Bet)}[/]";
-            return $"{marker}{cards}  {YourTotal(hand)}  {tail}";
+            var stood = several && hand.Outcome is null && hand.IsStood ? "[grey]stood[/]  " : "";
+            var tail = hand.Outcome is { } outcome ? OutcomeLabel(hand, outcome).Text : BetLabel(hand);
+            return $"{marker}{cards}  {YourTotal(hand)}  {stood}{tail}";
         }
+
+        private static string BetLabel(Hand hand) => $"bet [bold]{Money(hand.Bet)}[/]{(hand.IsDoubled ? " (doubled)" : "")}";
 
         // " · ins 5" while the dealer has yet to peek, then " · ins +10" or " · ins -5" until the
         // next round.
@@ -598,7 +602,7 @@ namespace blackjack.Cli
                 {
                     > 0m => ($"[bold green]{hands.Count} HANDS +{Money(net)}[/]", Color.Green),
                     < 0m => ($"[bold red]{hands.Count} HANDS -{Money(-net)}[/]", Color.Red),
-                    _ => ($"[bold yellow]{hands.Count} HANDS PUSH[/]", Color.Yellow)
+                    _ => ($"[bold grey]{hands.Count} HANDS ±0[/]", Color.Grey)
                 };
                 return ($" {text}{RoundNet(hands)} ", colour);
             }
@@ -624,6 +628,7 @@ namespace blackjack.Cli
             return net == hands.Sum(h => h.Payout - h.Bet) ? "" : $" [bold]· ROUND {SignedMoney(net)}[/]";
         }
 
+        // A push is grey, so that yellow means your turn and nothing else.
         private static (string Text, Color Colour) OutcomeLabel(Hand hand, Outcome outcome)
         {
             var net = Money(Math.Abs(hand.Payout - hand.Bet));
@@ -631,7 +636,7 @@ namespace blackjack.Cli
             {
                 Outcome.Blackjack => ($"[bold green]BLACKJACK +{net}[/]", Color.Green),
                 Outcome.Win => ($"[bold green]WIN +{net}[/]", Color.Green),
-                Outcome.Push => ("[bold yellow]PUSH[/]", Color.Yellow),
+                Outcome.Push => ("[bold grey]PUSH ±0[/]", Color.Grey),
                 _ when hand.IsBust => ($"[bold red]BUST -{net}[/]", Color.Red),
                 _ => ($"[bold red]LOSE -{net}[/]", Color.Red)
             };
@@ -784,7 +789,7 @@ namespace blackjack.Cli
             {
                 Outcome.Blackjack => $"[green]+{net}[/]",
                 Outcome.Win => $"[green]+{net}[/]",
-                Outcome.Push => "[yellow]push[/]",
+                Outcome.Push => "[grey]push[/]",
                 _ when hand.IsBust => $"[red]bust -{net}[/]",
                 _ => $"[red]-{net}[/]"
             };

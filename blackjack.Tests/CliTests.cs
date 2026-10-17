@@ -311,6 +311,11 @@ namespace blackjack.Tests
             Assert.Matches(@"Doubled / split\s+│\s+0 / 0", output);
             Assert.DoesNotContain("Side bets", output);
             Assert.Contains("Thanks for playing, Tester!", output);
+
+            // The frame left above the summary states the outcome, not the question.
+            var frame = LastFrame(output);
+            Assert.Matches(@"Cashed out with \d+ chips\.", frame);
+            Assert.DoesNotContain("again to confirm", frame);
         }
 
         [Fact]
@@ -328,6 +333,9 @@ namespace blackjack.Tests
 
             Assert.Contains("You don't have enough chips", console.Output);
             Assert.Contains("Thanks for playing, Tester!", console.Output);
+            var frame = LastFrame(console.Output);
+            Assert.Contains("Out of chips.", frame);
+            Assert.DoesNotContain("press any key", frame);
         }
 
         [Fact]
@@ -429,7 +437,8 @@ namespace blackjack.Tests
 
             var output = console.Output;
             Assert.Contains("A double", output);
-            Assert.Matches(@"You double to 20(,| and) draw", output);
+            Assert.Matches(@"You double the bet to 20(,| and) draw \S+ (for|and bust with) \d+\.", output);
+            Assert.Contains("bet 20 (doubled)", output);
             Assert.Matches(@"Doubled / split\s+│\s+1 / 0", output);
             Assert.Matches(@"Hands you played\s+│\s+1\b", output);
         }
@@ -490,9 +499,10 @@ namespace blackjack.Tests
             Assert.Matches(@"Insurance taken\s+│\s+1\b", output);
 
             // The settled insurance stays on the bet row, and the header totals the round.
+            Assert.Contains("next bet 10 · ins +10", output);
             var frame = LastFrame(output);
             Assert.Contains("LOSE -10 · ROUND ±0", frame);
-            Assert.Contains("next bet 10 · ins +10", frame);
+            Assert.Contains("bet 10 · ins +10", frame);
         }
 
         [Fact]
@@ -625,6 +635,7 @@ namespace blackjack.Tests
 
             var output = console.Output;
             Assert.Contains("shoe 1 · seed 12345", output);
+            Assert.Contains("Cashed out with 1000 chips.", LastFrame(output));
             Assert.Matches(@"Seed\s+│\s+12345\b", output);
             Assert.Matches(@"Shoes\s+│\s+1\b", output);
             Assert.Contains("Replay this session: dotnet run --project blackjack -- --seed 12345", output);
@@ -823,6 +834,7 @@ namespace blackjack.Tests
             var second = Frame();
             Assert.Contains("HAND 2 OF 2", second);
             Assert.Contains("▶ 8♣ K♣", second);
+            Assert.Contains("8♥ 3♥ 5♣  16  stood  bet 10", second);
 
             while (game.Phase == Phase.PlayerTurn)
             {
@@ -842,6 +854,31 @@ namespace blackjack.Tests
             var nextBets = Frame();
             Assert.Contains("2 HANDS +20 · ROUND +30", nextBets);
             Assert.Contains("T 21+3 10 (-10) · G Bust It 0 (+20)", nextBets);
+        }
+
+        [Fact]
+        public void TableScreen_ShowsAPushInGrey_WithItsZero()
+        {
+            var console = NewConsole();
+            var human = new Player("Tester", 100m, new BasicStrategyBot());
+            var bot = new Player("Bot 1", 100m, new BasicStrategyBot());
+            // Everyone has 18: you, the bot and the dealer.
+            var game = new Game(new Rules(), new[] { human, bot }, Shoe.Stacked(Of("10h 10d 10c 8s 8c 8d")));
+            var screen = new TableScreen(console, KeyBindings.Defaults(), new FastForward());
+            screen.Seat(game, human, new CardCounter(), new SessionStats(100m), 1);
+            game.PlaceBet(human, 10m);
+            game.PlaceBet(bot, 10m);
+            game.Deal();
+            game.Stand();
+            game.Stand();
+
+            screen.Refresh();
+
+            // Grey text in a double border: settled, and not your move.
+            Assert.Equal(Phase.Settled, game.Phase);
+            Assert.Contains("╔═PUSH ±0═", console.Output);
+            Assert.Contains("18  push", console.Output);
+            Assert.DoesNotContain("YOUR MOVE", console.Output);
         }
 
         [Fact]
