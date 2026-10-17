@@ -40,9 +40,11 @@ namespace blackjack.Cli
             var botTypes = bots > 0 ? AskBotTypes(console, bots, seed) : new List<BotType>();
 
             var sideBets = new List<ISideBet> { SideBets.All[0], SideBets.All[1] };
+            DescribeSideBets(console, sideBets);
             if (console.Confirm($"Change the side bets? [grey]({sideBets[0].Name} and {sideBets[1].Name})[/]", defaultValue: false))
             {
                 AskSideBets(console, sideBets);
+                DescribeSideBets(console, sideBets);
             }
 
             console.MarkupLine($"[grey]Keys: {KeyBindingsEditor.Summary(keys)}[/]");
@@ -150,9 +152,11 @@ namespace blackjack.Cli
                     .DefaultValue(seed));
         }
 
-        // Two of the catalogue, by name; the second must differ from the first.
+        // Two of the catalogue, by name, with every pay table in view; the second must differ from
+        // the first.
         private static void AskSideBets(IAnsiConsole console, List<ISideBet> sideBets)
         {
+            DescribeSideBets(console, SideBets.All);
             var names = SideBets.All.Select(b => b.Name).ToArray();
             var first = console.Prompt(
                 new TextPrompt<string>("First side bet?")
@@ -167,6 +171,14 @@ namespace blackjack.Cli
 
             sideBets[0] = SideBets.Named(first);
             sideBets[1] = SideBets.Named(second);
+        }
+
+        private static void DescribeSideBets(IAnsiConsole console, IEnumerable<ISideBet> bets)
+        {
+            foreach (var bet in bets)
+            {
+                console.MarkupLine(TableScreen.SideBetDescription(bet));
+            }
         }
     }
 }

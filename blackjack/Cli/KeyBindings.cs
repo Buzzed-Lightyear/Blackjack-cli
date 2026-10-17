@@ -200,7 +200,7 @@ namespace blackjack.Cli
             KeyAction.SideBet2 => "add to the second side bet",
             KeyAction.Insurance => "take insurance",
             KeyAction.FastForward => "autopilot (the book plays your seat)",
-            KeyAction.NextShoe => "skip to the next shoe",
+            KeyAction.NextShoe => "play out the shoe (autopilot at the minimum until the next shoe)",
             KeyAction.CashOut => "cash out",
             KeyAction.Book => "show or hide the book's advice",
             KeyAction.Count => "show or hide the count",

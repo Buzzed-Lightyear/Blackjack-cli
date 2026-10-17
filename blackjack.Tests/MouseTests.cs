@@ -191,8 +191,9 @@ namespace blackjack.Tests
             Assert.Equal(Chord("Space"), screen.HintAt(ColumnOf(line1, "deal"), 27));
             Assert.Equal(Chord("Space"), screen.HintAt(ColumnOf(line1, "deal") + 3, 27));
             Assert.Equal(Chord("X"), screen.HintAt(ColumnOf(line2, "X"), 28));
-            Assert.Equal(Chord("X"), screen.HintAt(ColumnOf(line2, "out"), 28));
+            Assert.Equal(Chord("X"), screen.HintAt(ColumnOf(line2, "cash"), 28));
             Assert.Equal(Chord("F"), screen.HintAt(ColumnOf(line2, "F"), 28));
+            Assert.Equal(Chord("R"), screen.HintAt(ColumnOf(line2, "play"), 28));
             Assert.Equal(Chord("R"), screen.HintAt(ColumnOf(line2, "shoe"), 28));
             Assert.Equal(Chord("B"), screen.HintAt(ColumnOf(line2, "book"), 28));
             Assert.Equal(Chord("C"), screen.HintAt(ColumnOf(line2, "C"), 28));
@@ -217,8 +218,8 @@ namespace blackjack.Tests
             Assert.Null(screen.HintAt(99, 28));
             Assert.Null(screen.HintAt(ColumnOf(line2, "X"), 26));
             Assert.Null(screen.HintAt(ColumnOf(line2, "X"), 29));
-            Assert.Null(screen.HintAt(ColumnOf(line2, "X"), 27));
             Assert.Null(screen.HintAt(ColumnOf(line2, "X"), 10));
+            Assert.Null(screen.HintAt(ColumnOf(line2, "F"), 27)); // the P of PLACE
         }
 
         [Fact]
@@ -357,17 +358,17 @@ namespace blackjack.Tests
         [Fact]
         public void App_PlaysARoundByClickingTheHints()
         {
-            // At 110 columns the betting bar reads "PLACE YOUR BET  ◀ 10 ▶  Q/E -/+10 or type it ·
-            // T/G side bets · Space deal" over "F autopilot · R next shoe · X cash out · …", the
+            // At 110 columns the betting bar reads "PLACE YOUR BET  ◀ 10 ▶  Space deal · Q/E -/+10
+            // or type it · T/G side bets" over "F autopilot · R play out shoe · X cash out · …", the
             // move bar "D hit · S stand · …", and cashing out after the lost 20 "Cash out with 980
             // chips?  X again to confirm", each from column 2 of rows 27 and 28.
             var seed = SeedThatLosesOnAStand();
             var console = NewConsole();
             PushSetup(console);
-            PushClick(console, 2 + 26, 27);  // E: bet 20
-            PushClick(console, 2 + 63, 27);  // Space deal
+            PushClick(console, 2 + 39, 27);  // E: bet 20
+            PushClick(console, 2 + 30, 27);  // the "deal" of Space deal
             PushClick(console, 2 + 8, 28);   // S stand
-            PushClick(console, 2 + 28, 28);  // X cash out
+            PushClick(console, 2 + 32, 28);  // X cash out
             PushClick(console, 2 + 26, 27);  // X again to confirm
 
             new BlackjackApp(console, TimeSpan.Zero, seed).Run();
@@ -376,9 +377,10 @@ namespace blackjack.Tests
             var betting = FrameWith(output, "PLACE YOUR BET", 30);
             var move = FrameWith(output, "YOUR MOVE", 30);
             var cashOut = FrameWith(output, "Cash out with", 30);
-            Assert.Equal("E", betting[27].Substring(28, 1));
-            Assert.Equal("Space deal", betting[27].Substring(65, 10));
+            Assert.Equal("E", betting[27].Substring(41, 1));
+            Assert.Equal("Space deal", betting[27].Substring(26, 10));
             Assert.Equal("S stand", move[28].Substring(10, 7));
+            Assert.Equal("X cash out", betting[28].Substring(34, 10));
             Assert.Equal("X again", cashOut[27].Substring(28, 7));
             Assert.Contains("next bet 20", output);
             Assert.Contains(move, line => Regex.IsMatch(line, @"(?<!next )bet 20\b"));
@@ -415,7 +417,7 @@ namespace blackjack.Tests
         {
             var console = NewConsole();
             PushSetup(console);
-            PushClick(console, 2 + 28, 28);  // X cash out
+            PushClick(console, 2 + 32, 28);  // X cash out
             PushClick(console, 2 + 27, 27);  // X again to confirm
 
             new BlackjackApp(console, TimeSpan.Zero, 1).Run();
