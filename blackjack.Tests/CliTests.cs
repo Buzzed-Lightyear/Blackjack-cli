@@ -466,7 +466,7 @@ namespace blackjack.Tests
         [Fact]
         public void App_OffersInsuranceOnAnAce_AndPaysItOnADealerBlackjack()
         {
-            var seed = FirstSeedWhere(bots: 0, round => round.InsuranceOffered && round.Game.DealerHand.IsNatural);
+            var seed = FirstSeedWhere(bots: 0, round => round.InsuranceOffered && round.Game.DealerHand.IsNatural && !round.Hand.IsNatural);
             var console = NewConsole();
             PushSetup(console);
             console.Input.PushKey(ConsoleKey.Spacebar);
@@ -479,8 +479,20 @@ namespace blackjack.Tests
             Assert.Contains("Dealer shows an ace. Insurance for 5 chips?", output);
             Assert.Contains("Z yes", output);
             Assert.Contains("INSURANCE?", output);
-            AssertInOrder(output, @"You take insurance for 5\.", "The book never takes insurance", "blackjack", @"Insurance pays 10\.");
+            AssertInOrder(
+                output,
+                @"You take insurance for 5\.",
+                "The book never takes insurance",
+                "blackjack",
+                @"Dealer peeks: blackjack\.",
+                @"Insurance pays 10\.",
+                @"Round net ±0\.");
             Assert.Matches(@"Insurance taken\s+│\s+1\b", output);
+
+            // The settled insurance stays on the bet row, and the header totals the round.
+            var frame = LastFrame(output);
+            Assert.Contains("LOSE -10 · ROUND ±0", frame);
+            Assert.Contains("next bet 10 · ins +10", frame);
         }
 
         [Fact]
@@ -496,7 +508,10 @@ namespace blackjack.Tests
 
             new BlackjackApp(console, TimeSpan.Zero, seed).Run();
 
-            AssertInOrder(console.Output, @"You take insurance for 5\.", @"Insurance lost\.", "You stand on");
+            var output = console.Output;
+            AssertInOrder(output, @"You take insurance for 5\.", @"Dealer peeks: no blackjack\.", @"Insurance lost\.", "You stand on", @"Round net [+\-±]\d+\.");
+            Assert.Contains("bet 10 · ins -5", output);
+            Assert.Matches(@"(WIN \+\d+|LOSE -\d+|PUSH) · ROUND [+\-±]\d+", LastFrame(output));
         }
 
         [Fact]
@@ -515,9 +530,11 @@ namespace blackjack.Tests
 
             var output = console.Output;
             Assert.Contains("Space NO", output);
-            AssertInOrder(output, @"You decline insurance\.", "You stand on");
+            AssertInOrder(output, @"You decline insurance\.", @"Dealer peeks: no blackjack\.", "You stand on");
             Assert.DoesNotContain("Insurance lost", output);
             Assert.DoesNotContain("Insurance taken", output);
+            Assert.DoesNotContain("· ins", output);
+            Assert.DoesNotContain("Round net", output);
         }
 
         [Fact]
@@ -539,6 +556,7 @@ namespace blackjack.Tests
             Assert.Contains("G Bust It 10", output);
             Assert.Matches(@"21\+3( loses \(no hand\)|: [a-z ]+, \+\d+)\.", output);
             Assert.Matches(@"Bust It( loses \((no bust|dealer blackjack)\)|: \d-card bust, \+\d+)\.", output);
+            Assert.Matches(@"Round net [+\-±]\d+\.", output);
             Assert.Matches(@"Side bets\s+│\s+2 placed, [012] won", output);
             Assert.Matches(@"Side-bet net\s+│\s+[+\-±]\d+", output);
         }
@@ -804,10 +822,55 @@ namespace blackjack.Tests
 
             var settled = Frame();
             Assert.Equal(Phase.Settled, game.Phase);
-            Assert.Contains("2 HANDS +20", settled);
+            Assert.Contains("2 HANDS +20 · ROUND +30", settled);
             Assert.Contains("WIN +10", settled);
             Assert.Contains("21+3 no hand -10 · Bust It 3-card bust +20", settled);
             Assert.Contains("BUST 25", settled);
+
+            // While the next stakes are chosen, each sits beside how the last one came out.
+            screen.PendingBet = 10;
+            screen.PendingSideBets = new long[] { 10, 0 };
+            var nextBets = Frame();
+            Assert.Contains("2 HANDS +20 · ROUND +30", nextBets);
+            Assert.Contains("T 21+3 10 (-10) · G Bust It 0 (+20)", nextBets);
+        }
+
+        [Fact]
+        public void TableScreen_ShowsInsuranceOnTheBetRow()
+        {
+            var console = NewConsole();
+            var human = new Player("Tester", 100m, new BasicStrategyBot());
+            var bot = new Player("Bot 1", 100m, new BasicStrategyBot());
+            // You: 10, 7. Bot: 9, 8. Dealer: ace up, 5 in the hole.
+            var game = new Game(new Rules(), new[] { human, bot }, Shoe.Stacked(Of("10h 9c Ad 7s 8d 5s 10c 10d")));
+            var screen = new TableScreen(console, KeyBindings.Defaults(), new FastForward());
+            screen.Seat(game, human, new CardCounter(), new SessionStats(100m), 1);
+            game.PlaceBet(human, 10m);
+            game.PlaceBet(bot, 10m);
+            game.Deal();
+
+            string Frame()
+            {
+                var start = console.Output.Length;
+                screen.Refresh();
+                return console.Output[start..];
+            }
+
+            game.TakeInsurance();
+            Assert.Contains("bet 10 · ins 5", Frame());   // the bot has yet to answer
+
+            game.DeclineInsurance();
+            Assert.Equal(Phase.PlayerTurn, game.Phase);
+            var playing = Frame();
+            Assert.Contains("YOUR MOVE", playing);
+            Assert.Contains("bet 10 · ins -5", playing);
+
+            game.Stand();
+            game.Stand();
+            var settled = Frame();
+            Assert.Equal(Phase.Settled, game.Phase);
+            Assert.Contains("bet 10 · ins -5", settled);
+            Assert.Matches(@"(WIN \+\d+|LOSE -\d+|PUSH) · ROUND [+\-±]\d+", settled);
         }
 
         [Fact]

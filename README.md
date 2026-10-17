@@ -85,13 +85,16 @@ than the table allows and can cover another bet. Splitting moves the second card
 the same bet, deals a card to each, and plays the first hand to the end before the second; a split
 hand can be split again. Split aces get one card each and stand; a two-card 21 after a split is an
 ordinary 21, not a blackjack. Your seat shows every hand with its bet, a `▶` on the one being
-played, and each hand's result once the round is settled; the panel header gives the round's net
-when there is more than one.
+played, and each hand's result once the round is settled; the panel header gives the hands' net
+when there is more than one, and the whole round's net after it (`LOSE -10 · ROUND -15`) whenever
+insurance or a side bet made the two differ. The log closes such a round with `Round net -15.`
 
 When the dealer shows an ace, everyone who can afford half their bet is asked about insurance before
 the dealer peeks. `Z` takes it for half the bet, `Space` declines. A dealer blackjack pays insurance
 2:1 (and the hand loses, unless it is a blackjack too, which pushes); otherwise the insurance is
-lost and play goes on. The book never takes insurance.
+lost and play goes on. The log says what the peek found (`Dealer peeks: no blackjack.`), and your
+seat keeps the stake on the bet row, `bet 10 · ins 5` while the dealer has yet to peek and then
+`ins +10` or `ins -5`, until the next round. The book never takes insurance.
 
 ### Rules
 
@@ -130,8 +133,10 @@ decks; Bust It depends on the soft-17 rule.
 | Lucky Lucky | at the deal: your two cards and the dealer's upcard, aces 1 or 11 | suited 7-7-7 200, suited 6-7-8 100, 7-7-7 50, 6-7-8 30, suited 21 15, 21 3, 20 or 19 2 | 2.66% |
 
 Deal-time bets are settled right after the dealer peeks, so the log and your seat show them before
-you play. The cash-out summary counts the side bets placed and won and gives their net on its own
-row, apart from the main game's.
+you play. Each result stays beside the next round's stake while you bet (`T 21+3 10 (+300)`), and
+the round's closing log line and the seat header give the round's net with the side bets in. The
+cash-out summary counts the side bets placed and won and gives their net on its own row, apart
+from the main game's.
 
 ## Bots
 

@@ -208,6 +208,7 @@ namespace blackjack.Cli
         // With an ace up, each seat answers in turn before the dealer peeks.
         private void OfferInsurance(Game game, TableScreen screen, Player human, CardCounter counter)
         {
+            var aceUp = game.DealerUpcard!.Rank == Rank.Ace;
             while (game.Phase == Phase.Insurance)
             {
                 var player = game.CurrentPlayer!;
@@ -230,8 +231,20 @@ namespace blackjack.Cli
                 }
             }
 
+            // The peek is what settles an ace; a dealer blackjack has already been called as the
+            // hole card turned over, so it is only repeated for a player whose insurance it pays.
+            if (aceUp && !game.DealerHand.IsNatural)
+            {
+                screen.Log("[grey]Dealer peeks: no blackjack.[/]");
+            }
+
             if (human.Insurance > 0m)
             {
+                if (game.DealerHand.IsNatural)
+                {
+                    screen.Log("Dealer peeks: blackjack.");
+                }
+
                 screen.Log(human.InsurancePayout > 0m
                     ? $"[bold green]Insurance pays {TableScreen.Money(human.InsurancePayout - human.Insurance)}.[/]"
                     : "[red]Insurance lost.[/]");
@@ -457,6 +470,12 @@ namespace blackjack.Cli
             }
 
             AnnounceSideBets(screen, human);
+
+            // With more than the hands at stake, the round closes on one figure.
+            if (human.SideBets.Count > 0 || human.Insurance > 0m)
+            {
+                screen.Log($"[bold]Round net {TableScreen.SignedMoney(human.RoundNet)}.[/]");
+            }
         }
 
         // Side bets settle at the deal or after the dealer plays; each is announced once, when it has.
