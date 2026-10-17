@@ -477,26 +477,33 @@ namespace blackjack.Tests
             Assert.Contains("AUTOPILOT", output);
             Assert.Matches(@"Autopilot off after \d hands?", output);
             Assert.Matches(@"Hands on autopilot\s+│\s+\d\b", output);
+            Assert.Matches(@"Autopilot net\s+│\s+[+\-±]\d+", output);
             Assert.Matches(@"Hands you played\s+│\s+0\b", output);
         }
 
         [Fact]
-        public void App_SkipsToTheNextShoe()
+        public void App_PlaysOutTheShoe_OnceTheKeyIsPressedTwice()
         {
-            // Keys only reach questions here, so nothing stops the skip early.
+            // Keys only reach questions here, so nothing stops the autopilot early.
             var test = NewConsole();
             var console = new ScriptedConsole(test);
             PushSetup(test, bots: "2");
-            test.Input.PushKey(ConsoleKey.R);            // skip to the next shoe
+            test.Input.PushKey(ConsoleKey.R);            // asks first
+            test.Input.PushKey(ConsoleKey.R);            // play out the shoe
             PushCashOut(test);
 
             new BlackjackApp(console, TimeSpan.Zero, 3).Run();
 
-            var frame = LastFrame(console.Output);
+            var output = console.Output;
+            Assert.Contains("R play out shoe", output);
+            Assert.Contains("Play out the shoe on autopilot at the minimum?  R again to confirm", output);
+            var frame = LastFrame(output);
             Assert.Contains("Fresh shoe. The autopilot played", frame);
             Assert.Matches(@"running\s+0\b", frame);
             Assert.Matches(@"decks\s+6\.0 left", frame);
-            Assert.Contains("SKIPPING TO THE NEXT SHOE", console.Output);
+            Assert.Contains("SKIPPING TO THE NEXT SHOE", output);
+            Assert.Matches(@"Hands on autopilot\s+│\s+\d+\b", frame);
+            Assert.Matches(@"Autopilot net\s+│\s+[+\-±]\d+", frame);
         }
 
         [Fact]
@@ -894,8 +901,33 @@ namespace blackjack.Tests
 
             autopilot.Stop();
             console.Input.PushKey(ConsoleKey.R);
+            console.Input.PushKey(ConsoleKey.R);
             strategy.DecideBet(100m, Tables.Fresh());
             Assert.True(autopilot.SkippingShoes);
+        }
+
+        [Fact]
+        public void Betting_PlayingOutTheShoeTakesTheKeyTwice()
+        {
+            var console = NewConsole();
+            var (strategy, _, autopilot, _) = NewSeat(console);
+            console.Input.PushKey(ConsoleKey.R);
+            console.Input.PushKey(ConsoleKey.Z);               // changed my mind
+            console.Input.PushKey(ConsoleKey.E);               // still betting: raise it
+            console.Input.PushKey(ConsoleKey.R);
+            console.Input.PushKey(ConsoleKey.R);
+
+            Assert.Equal(10m, strategy.DecideBet(100m, Tables.Fresh()));  // the book bets the minimum
+            Assert.True(autopilot.IsActive);
+            Assert.True(autopilot.SkippingShoes);
+
+            // The question, the bet bar back after the other key, then the question again.
+            AssertInOrder(
+                console.Output,
+                @"Play out the shoe on autopilot at the minimum\?  R again to confirm",
+                "any other key keeps you at the table",
+                "PLACE YOUR BET  ◀ 20 ▶",
+                @"Play out the shoe on autopilot at the minimum\?");
         }
 
         [Fact]

@@ -63,6 +63,7 @@ namespace blackjack.Cli
             bet = Math.Clamp(bet == 0 ? min : bet, min, max);
             var typed = "";
             var cashingOut = false;
+            var playingOut = false;
             try
             {
                 while (true)
@@ -75,6 +76,13 @@ namespace blackjack.Cli
                     {
                         screen.SetBar(
                             $"[bold red]Cash out with {TableScreen.Money(chips)} chips?[/]  {screen.Key(KeyAction.CashOut)} again to confirm",
+                            "[grey]any other key keeps you at the table[/]",
+                            BarTone.Alert);
+                    }
+                    else if (playingOut)
+                    {
+                        screen.SetBar(
+                            $"[bold red]Play out the shoe on autopilot at the minimum?[/]  {screen.Key(KeyAction.NextShoe)} again to confirm",
                             "[grey]any other key keeps you at the table[/]",
                             BarTone.Alert);
                     }
@@ -92,6 +100,18 @@ namespace blackjack.Cli
                         }
 
                         cashingOut = false;
+                        continue;
+                    }
+
+                    if (playingOut)
+                    {
+                        if (keys.Is(KeyAction.NextShoe, key))
+                        {
+                            fastForward.SkipShoe();
+                            return book.DecideBet(chips, table);
+                        }
+
+                        playingOut = false;
                         continue;
                     }
 
@@ -152,8 +172,7 @@ namespace blackjack.Cli
                     }
                     else if (keys.Is(KeyAction.NextShoe, key))
                     {
-                        fastForward.SkipShoe();
-                        return book.DecideBet(chips, table);
+                        playingOut = true;
                     }
                     else if (keys.Is(KeyAction.CashOut, key))
                     {
@@ -307,7 +326,7 @@ namespace blackjack.Cli
         };
 
         private string BetCommands() =>
-            $"[grey]{screen.Key(KeyAction.FastForward)} autopilot · {screen.Key(KeyAction.NextShoe)} next shoe · "
+            $"[grey]{screen.Key(KeyAction.FastForward)} autopilot · {screen.Key(KeyAction.NextShoe)} play out shoe · "
             + $"{screen.Key(KeyAction.CashOut)} cash out ·[/] {screen.Toggles()}";
 
         private string InsuranceLine(Hand hand)

@@ -57,20 +57,23 @@ Default keys, all under the left hand:
 | | digits | type an exact bet (`Backspace` and `Esc` to fix it) |
 | | `T` / `G` | add the minimum to the first / second side bet |
 | | `F` | autopilot: the book plays your seat while you watch |
-| | `R` | skip to the next shoe |
+| | `R` twice | play out the shoe: autopilot at the minimum until the next shoe |
 | | `X` twice | cash out |
 | Dealer shows an ace | `Z` / `Space` | take / decline insurance |
 | Your move | `D` / `S` | hit / stand |
 | | `A` / `W` | double down / split, when the bar offers them |
 | Any time | `B` / `C` | show or hide the book's advice / the count |
 | On autopilot | `Q` / `E` | slower / faster |
-| | `R` | skip one more shoe |
+| | `R` | play out one more shoe |
 | | any other key | stop after this hand |
 
 The book's choice is highlighted on every move. If you go against it, the log says what the book
 would have done, and the cash-out summary shows how often you followed it. On autopilot your seat
-bets the table minimum, never takes insurance and never stakes a side bet. Keys pressed while the
-bots and dealer play are ignored, so a stray press can't deal the next hand.
+bets the table minimum, never takes insurance and never stakes a side bet. `R` plays out the rest
+of the shoe that way at full speed; since it wagers your chips for every hand to the cut card, it
+asks once (`R` again to confirm, any other key keeps you at the table), and the summary gives the
+autopilot's hands and net on their own rows. Keys pressed while the bots and dealer play are
+ignored, so a stray press can't deal the next hand.
 
 ### Doubling, splitting and insurance
 

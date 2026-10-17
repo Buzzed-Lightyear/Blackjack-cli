@@ -406,7 +406,7 @@ namespace blackjack.Cli
 
             if (fastForward.IsActive)
             {
-                stats.RecordAutopilot(hands.Count);
+                stats.RecordAutopilot(human);
             }
             else
             {
@@ -513,7 +513,8 @@ namespace blackjack.Cli
 
             if (stats.AutopilotHands > 0)
             {
-                table.AddRow("Hands on autopilot", stats.AutopilotHands.ToString());
+                table.AddRow("Hands on autopilot", stats.AutopilotHands.ToString())
+                    .AddRow("Autopilot net", TableScreen.SignedMoney(stats.AutopilotNet));
             }
 
             if (stats.SideBetsPlaced > 0)
