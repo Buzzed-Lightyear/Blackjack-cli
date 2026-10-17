@@ -46,8 +46,8 @@ Every region's size depends only on the terminal size and the number of seats, n
 or the log, so nothing moves between frames; what does not fit a region is cropped inside it.
 Resize the terminal whenever you like: the table notices while it waits for a key or animates a
 deal, and redraws from a clear screen at the new size. Below 60 columns or 16 rows it makes way
-for `Terminal too small` with the size it needs; keys are still read, so make the window bigger
-or cash out with `X` twice.
+for `Terminal too small` with the size it needs and a reminder that the keys still work, so make
+the window bigger or cash out with `X` twice between hands.
 
 Default keys, all under the left hand:
 
@@ -63,10 +63,15 @@ Default keys, all under the left hand:
 | Dealer shows an ace | `Z` / `Space` | take / decline insurance |
 | Your move | `D` / `S` | hit / stand |
 | | `A` / `W` | double down / split, when the bar offers them |
-| Any time | `B` / `C` | show or hide the book's advice / the count |
+| Any time | `B` / `C` | hide or show the book's advice / the count (the bar says which) |
 | On autopilot | `Q` / `E` | slower / faster |
 | | `R` | play out one more shoe |
 | | any other key | stop after this hand |
+
+Between hands the bar reads `PLACE YOUR BET  ◀ 10 ▶  Space deal · Q/E -/+10 or type it · T/G side
+bets`, with the deal key right after the amount so that a narrow terminal cuts the other hints
+first. A typed amount outside the table's limits shows what is wrong in place of the deal hint,
+and your seat keeps the last valid bet until it is fixed.
 
 The book's choice is highlighted on every move. If you go against it, the log says what the book
 would have done, and the cash-out summary shows how often you followed it. On autopilot your seat

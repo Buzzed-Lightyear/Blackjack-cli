@@ -164,7 +164,7 @@ namespace blackjack.Tests
 
             table.Screen.HandleToggle(Press(ConsoleKey.C));
             var hidden = Frame(console, table.Screen);
-            Assert.Contains("Hi-Lo hidden · C to show", hidden);
+            Assert.Contains("Hi-Lo hidden · C show count", hidden);
             Assert.DoesNotContain("running", hidden);
 
             // One column more and the panel is back beside your seat.
@@ -175,6 +175,12 @@ namespace blackjack.Tests
             Assert.Contains("─Hi-Lo", panel);
             Assert.DoesNotContain("Hi-Lo running", panel);
             Assert.Equal(RowOf(panel, "^╔═"), RowOf(panel, "─Hi-Lo"));
+
+            // Hidden, the panel says what the key does, like the bar.
+            beside.Screen.HandleToggle(Press(ConsoleKey.C));
+            var hiddenPanel = Frame(wider, beside.Screen);
+            Assert.Contains("C show count", hiddenPanel);
+            Assert.DoesNotContain("running", hiddenPanel);
         }
 
         [Theory]
@@ -190,6 +196,8 @@ namespace blackjack.Tests
             AssertFills(frame, width, height);
             Assert.Contains("Terminal too small", frame);
             Assert.Contains($"Blackjack needs 60×16, this is {width}×{height}", frame);
+            Assert.Contains("keys still work · X twice between hands cashes out", frame);
+            Assert.Equal(RowOf(frame, "Terminal too small") + 2, RowOf(frame, "keys still work"));
             Assert.DoesNotContain("BLACKJACK ", frame);
             Assert.DoesNotContain("DEALER", frame);
             Assert.DoesNotContain("┏", frame);

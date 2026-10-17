@@ -124,8 +124,9 @@ namespace blackjack.Cli
 
         public string HandTag(Hand hand) => HandTag(human, hand);
 
+        // Phrased as what the key does, like every other hint in the bar.
         public string Toggles() =>
-            $"[grey]{Key(KeyAction.Book)} book {OnOff(ShowBook)} · {Key(KeyAction.Count)} count {OnOff(ShowCount)}[/]";
+            $"[grey]{Key(KeyAction.Book)} {HideOrShow(ShowBook)} book · {Key(KeyAction.Count)} {HideOrShow(ShowCount)} count[/]";
 
         public void Refresh()
         {
@@ -269,12 +270,13 @@ namespace blackjack.Cli
         }
 
         // Shown in place of the table while the terminal can't hold one; keys are still read, so
-        // the player can make it bigger or cash out.
-        private static IRenderable TooSmall(int width, int height) =>
+        // the player can make it bigger or cash out, and the message says so.
+        private IRenderable TooSmall(int width, int height) =>
             Align.Center(
                 new Rows(
                     new Markup("[bold red]Terminal too small[/]"),
-                    new Markup($"[grey]Blackjack needs {TableLayout.MinWidth}×{TableLayout.MinHeight}, this is {width}×{height}[/]")),
+                    new Markup($"[grey]Blackjack needs {TableLayout.MinWidth}×{TableLayout.MinHeight}, this is {width}×{height}[/]"),
+                    new Markup($"[grey]keys still work · {Key(KeyAction.CashOut)} twice between hands cashes out[/]")),
                 VerticalAlignment.Middle);
 
         // The round and the rules on the left; the shoe, its seed and your chips on the right. The
@@ -653,7 +655,7 @@ namespace blackjack.Cli
             if (!ShowCount)
             {
                 lines.Add("[grey]hidden[/]");
-                lines.Add($"[grey]{Key(KeyAction.Count)} to show[/]");
+                lines.Add($"[grey]{Key(KeyAction.Count)} show count[/]");
             }
             else
             {
@@ -674,7 +676,7 @@ namespace blackjack.Cli
         {
             if (!ShowCount)
             {
-                return new Line($"[grey]Hi-Lo hidden · {Key(KeyAction.Count)} to show[/]");
+                return new Line($"[grey]Hi-Lo hidden · {Key(KeyAction.Count)} show count[/]");
             }
 
             return new Line(
@@ -741,8 +743,8 @@ namespace blackjack.Cli
             var what = fastForward.SkippingShoes
                 ? $"[bold aqua]▶▶ SKIPPING TO THE NEXT SHOE[/]{(fastForward.ShoesLeft > 1 ? $" [aqua]({fastForward.ShoesLeft} to go)[/]" : "")}"
                 : "[bold aqua]▶▶ AUTOPILOT[/] [grey]the book plays your seat[/]";
-            var line1 = $"{what}  ·  speed [bold]{fastForward.Speed.ToString().ToLowerInvariant()}[/]"
-                + $"  ·  {fastForward.Hands} hands  ·  chips {SignedMoney(fastForward.Net)}";
+            var line1 = $"{what} · speed [bold]{fastForward.Speed.ToString().ToLowerInvariant()}[/]"
+                + $" · {fastForward.Hands} hands · chips {SignedMoney(fastForward.Net)}";
             var line2 = $"[grey]{Key(KeyAction.Slower)} slower · {Key(KeyAction.Faster)} faster · "
                 + $"{Key(KeyAction.NextShoe)} +1 shoe · any other key stops after this hand[/]";
             return (line1, line2, BarTone.Waiting);
@@ -784,7 +786,7 @@ namespace blackjack.Cli
             };
         }
 
-        private static string OnOff(bool on) => on ? "on" : "off";
+        private static string HideOrShow(bool shown) => shown ? "hide" : "show";
 
         // 1.5 -> "3:2", 1.2 -> "6:5".
         private static string Ratio(decimal payout)

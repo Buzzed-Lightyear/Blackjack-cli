@@ -68,9 +68,12 @@ namespace blackjack.Cli
             {
                 while (true)
                 {
+                    // A typed amount outside the table's limits is shown in the bar with what is
+                    // wrong, but the seat keeps the last valid bet until it is fixed.
                     var shown = typed.Length > 0 && long.TryParse(typed, out var value) ? value : bet;
-                    ClampSideStakes(shown >= min && shown <= max ? shown : bet, max);
-                    screen.PendingBet = shown;
+                    var pending = shown >= min && shown <= max ? shown : bet;
+                    ClampSideStakes(pending, max);
+                    screen.PendingBet = pending;
                     screen.PendingSideBets = sideStakes;
                     if (cashingOut)
                     {
@@ -147,7 +150,7 @@ namespace blackjack.Cli
                     }
                     else if (SideBetPressed(key) is { } side)
                     {
-                        AddSideStake(side, min, shown >= min && shown <= max ? shown : bet, max);
+                        AddSideStake(side, min, pending, max);
                     }
                     else if (key.Key == ConsoleKey.Enter || keys.Is(KeyAction.Deal, key))
                     {
@@ -304,18 +307,21 @@ namespace blackjack.Cli
             }
         }
 
+        // The deal key comes right after the amount, so it is the last hint a narrow terminal
+        // cuts; a typed amount the table won't take shows the problem in its place.
         private string BetLine(string typed, long min, long max)
         {
             var title = "[bold yellow]PLACE YOUR BET[/]";
+            var deal = $"{screen.Key(KeyAction.Deal)} deal";
             if (typed.Length == 0)
             {
-                return $"{title}  [bold]◀ {bet} ▶[/]  {screen.Key(KeyAction.BetDown)}/{screen.Key(KeyAction.BetUp)} -/+{min} or type it"
-                    + $"{SideBetKeyHint()} · {screen.Key(KeyAction.Deal)} deal";
+                return $"{title}  [bold]◀ {bet} ▶[/]  {deal} · {screen.Key(KeyAction.BetDown)}/{screen.Key(KeyAction.BetUp)} -/+{min} or type it"
+                    + SideBetKeyHint();
             }
 
             var value = long.Parse(typed);
-            var problem = value < min ? $"  [red]the minimum is {min}[/]" : value > max ? $"  [red]you have {max}[/]" : "";
-            return $"{title}  [bold]{typed}_[/]{problem}  [grey]Backspace · Esc[/] · {screen.Key(KeyAction.Deal)} deal";
+            var next = value < min ? $"[red]the minimum is {min}[/]" : value > max ? $"[red]you have {max}[/]" : deal;
+            return $"{title}  [bold]{typed}_[/]  {next} · [grey]Backspace · Esc[/]";
         }
 
         private string SideBetKeyHint() => sideStakes.Length switch

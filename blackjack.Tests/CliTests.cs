@@ -965,6 +965,60 @@ namespace blackjack.Tests
             Assert.Contains("you have 100", console.Output);
         }
 
+        [Theory]
+        [InlineData(80)]
+        [InlineData(70)]
+        public void Betting_TheDealHintFollowsTheAmount_SoANarrowBarKeepsIt(int width)
+        {
+            var console = NewConsole(width, 24);
+            var (strategy, _, _, _) = NewSeat(console, new[] { SideBets.All[0], SideBets.All[1] });
+            console.Input.PushKey(ConsoleKey.Spacebar);
+
+            Assert.Equal(10m, strategy.DecideBet(100m, Tables.Fresh()));
+            var frame = console.Output;
+            AssertFits(frame, width);
+            Assert.Contains("PLACE YOUR BET  ◀ 10 ▶  Space deal · Q/E -/+10 or type it · T/G s", frame);
+            Assert.Equal(width == 80, frame.Contains("T/G side bets"));
+            Assert.Contains("F autopilot · R play out shoe · X cash out · B hide book", frame);
+        }
+
+        [Fact]
+        public void Betting_AnInvalidTypedBet_OffersNoDeal_AndKeepsTheLastBet()
+        {
+            var console = NewConsole();
+            var (strategy, _, _, _) = NewSeat(console);
+            console.Input.PushKey(ConsoleKey.D7);
+            console.Input.PushKey(ConsoleKey.Spacebar);        // nothing to deal yet
+            console.Input.PushKey(ConsoleKey.D5);              // 75
+            console.Input.PushKey(ConsoleKey.Spacebar);
+
+            Assert.Equal(75m, strategy.DecideBet(100m, Tables.Fresh()));
+
+            var frames = console.Output.Split(FrameStart);
+            var invalid = frames.First(frame => frame.Contains("7_"));
+            Assert.Contains("PLACE YOUR BET  7_  the minimum is 10 · Backspace · Esc", invalid);
+            Assert.DoesNotContain("Space deal", invalid);
+            Assert.Contains("next bet 10", invalid);
+
+            var valid = frames.Last(frame => frame.Contains("75_"));
+            Assert.Contains("PLACE YOUR BET  75_  Space deal · Backspace · Esc", valid);
+            Assert.Contains("next bet 75", valid);
+        }
+
+        [Fact]
+        public void AutopilotBar_KeepsItsChipsFigure_AtEightyColumns()
+        {
+            var console = NewConsole(80, 24);
+            var (_, screen, autopilot, _) = NewSeat(console);
+            autopilot.Watch();
+
+            screen.Refresh();
+
+            var frame = console.Output;
+            AssertFits(frame, 80);
+            Assert.Contains("▶▶ AUTOPILOT the book plays your seat · speed fast · 0 hands · chips ±0", frame);
+        }
+
         [Fact]
         public void Betting_SideBetKeys_AddTheMinimum_AndWrapPastTheCap()
         {
@@ -1086,8 +1140,10 @@ namespace blackjack.Tests
 
             Assert.Equal(Move.Hit, strategy.DecideMove(HandOf("10h 6c"), C("10s"), new MoveOptions(true, false), Tables.Fresh()));
             Assert.Contains("book: hit", console.Output);
+            Assert.Contains("B hide book · C hide count", console.Output);
             Assert.Equal(Move.Stand, strategy.DecideMove(HandOf("10h 6c"), C("10s"), new MoveOptions(true, false), Tables.Fresh()));
             Assert.False(screen.ShowBook);
+            Assert.Contains("B show book · C hide count", console.Output);
 
             screen.Refresh();
             Assert.Contains("The book says hit on hard 16 against a 10.", console.Output);
