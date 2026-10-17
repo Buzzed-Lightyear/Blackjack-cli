@@ -17,6 +17,7 @@ namespace blackjack.Cli
         private readonly KeyBindings keys;
         private readonly string keysPath;
         private readonly IReadOnlyList<string> keyWarnings;
+        private readonly bool mouse;
         private readonly FastForward fastForward = new();
         private readonly HashSet<Hand> calledNaturals = new();
         private readonly HashSet<SideBetStake> announcedSideBets = new();
@@ -29,7 +30,8 @@ namespace blackjack.Cli
         private int splitDealt;
 
         // pause is how long a bot's move or a dealer's draw stays on screen; zero for tests. seed is
-        // offered in setup, and the shoes come out from firstShoe.
+        // offered in setup, and the shoes come out from firstShoe. mouse asks the terminal to report
+        // clicks while the table is up, where it can.
         public BlackjackApp(
             IAnsiConsole console,
             TimeSpan pause,
@@ -37,7 +39,8 @@ namespace blackjack.Cli
             int firstShoe = 1,
             KeyBindings? keys = null,
             string? keysPath = null,
-            IReadOnlyList<string>? keyWarnings = null)
+            IReadOnlyList<string>? keyWarnings = null,
+            bool mouse = true)
         {
             this.console = console;
             this.pause = pause;
@@ -46,6 +49,7 @@ namespace blackjack.Cli
             this.keys = keys ?? KeyBindings.Defaults();
             this.keysPath = keysPath ?? KeyBindings.ResolvePath(null);
             this.keyWarnings = keyWarnings ?? Array.Empty<string>();
+            this.mouse = mouse;
         }
 
         // Card, turn and end-of-hand pauses, scaled for normal play or the autopilot's speed.
@@ -96,16 +100,29 @@ namespace blackjack.Cli
             };
 
             console.Clear();
-            console.Live(screen.Build())
-                .AutoClear(false)
-                .Overflow(VerticalOverflow.Crop)
-                .Cropping(VerticalOverflowCropping.Top)
-                .Start(context =>
+            var reporting = mouse && MouseInput.Enable(console);
+            try
+            {
+                console.Live(screen.Build())
+                    .AutoClear(false)
+                    .Overflow(VerticalOverflow.Crop)
+                    .Cropping(VerticalOverflowCropping.Top)
+                    .Start(context =>
+                    {
+                        screen.Attach(context);
+                        PlayRounds(game, screen, human, seat, stats, counter);
+                        screen.Detach();
+                    });
+            }
+            finally
+            {
+                // The terminal keeps reporting the mouse until told to stop, so that is done even
+                // when the game throws.
+                if (reporting)
                 {
-                    screen.Attach(context);
-                    PlayRounds(game, screen, human, seat, stats, counter);
-                    screen.Detach();
-                });
+                    MouseInput.Disable(console);
+                }
+            }
 
             ShowSummary(human, bots, stats, settings, game);
         }

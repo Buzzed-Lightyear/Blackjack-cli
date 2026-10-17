@@ -83,6 +83,22 @@ namespace blackjack.Tests
         }
 
         [Fact]
+        public void Chords_KnowTheKeyTheyStandFor()
+        {
+            Assert.Equal(Press('D', ConsoleKey.D), Chord("d").ToKeyInfo());
+            Assert.Equal(Press(' ', ConsoleKey.Spacebar), Chord("Space").ToKeyInfo());
+            Assert.Equal(Press('\r', ConsoleKey.Enter), Chord("Enter").ToKeyInfo());
+            Assert.Equal(Press('\u001b', ConsoleKey.Escape), Chord("Esc").ToKeyInfo());
+            Assert.Equal(Press('\b', ConsoleKey.Backspace), Chord("Backspace").ToKeyInfo());
+            Assert.Equal(Press('\0', ConsoleKey.F5), Chord("F5").ToKeyInfo());
+            Assert.Equal(Press('\0', ConsoleKey.UpArrow), Chord("Up").ToKeyInfo());
+            Assert.Equal(Press('/', default), Chord("/").ToKeyInfo());
+
+            var keys = KeyBindings.Defaults();
+            Assert.All(Enum.GetValues<KeyAction>(), action => Assert.True(keys.Is(action, keys.Get(action)[0].ToKeyInfo())));
+        }
+
+        [Fact]
         public void SameKey_IsFine_WhenNeverReadAtTheSameTime()
         {
             var keys = KeyBindings.Defaults();

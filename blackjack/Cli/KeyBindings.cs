@@ -55,6 +55,9 @@ namespace blackjack.Cli
             (Key is { } key && info.Key == key)
             || (Char is { } c && info.KeyChar != '\0' && char.ToUpperInvariant(info.KeyChar) == c);
 
+        // The key event this chord stands for, as the console reports it being pressed.
+        public ConsoleKeyInfo ToKeyInfo() => new(Char ?? '\0', Key ?? default, false, false, false);
+
         public static bool TryParse(string text, out KeyChord chord)
         {
             var name = text.Trim();

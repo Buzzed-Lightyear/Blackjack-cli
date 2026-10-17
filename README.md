@@ -16,6 +16,7 @@ Options go after `--`, for example `dotnet run --project blackjack -- --fast --s
 - `--seed <n>` shuffles every shoe from this seed, so the same cards come out again; without it a
   seed is picked at random and shown, so any session can be replayed
 - `--shoe <n>` starts at shoe `n` of that seed instead of shoe 1
+- `--no-mouse` leaves the mouse alone, so the bar's key hints can't be clicked
 - `--keys` prints the key bindings and which file they came from
 - `--keys-file <path>` reads and saves key bindings somewhere other than `keys.ini`
 
@@ -96,6 +97,13 @@ of the shoe that way at full speed; since it wagers your chips for every hand to
 asks once (`R` again to confirm, any other key keeps you at the table), and the summary gives the
 autopilot's hands and net on their own rows. Keys pressed while the bots and dealer play are
 ignored, so a stray press can't deal the next hand.
+
+Mouse: any key hint in the bar can be clicked instead, and counts as that key: `S stand`, `Space
+deal`, the `E` of `Q/E`, `X` twice to cash out. A click anywhere else does nothing. Clicks are
+reported under Windows Terminal and in most Linux and macOS terminals, and not in the legacy
+Windows console, where the mouse is left alone; `--no-mouse` turns the reporting off anywhere.
+While it is on, most terminals select text with Shift held. Everything stays keyboard-first;
+nothing needs the mouse.
 
 ### Doubling, splitting and insurance
 
@@ -221,7 +229,9 @@ key also declines insurance, so it can't double as the insurance key.
   resizes, `TableLayout` shares the rows and columns out for a terminal size, `Line` is a line
   of markup that is cut rather than wrapped, `CardArt` draws the cards, `ShoeArt` the shoe and
   `ChipArt` the chip stacks, `ConsoleStrategy` is your seat, `FastForward` is the autopilot,
-  `KeyBindings` reads `keys.ini`
+  `KeyBindings` reads `keys.ini`, `MouseInput` turns the terminal's mouse reporting on,
+  `TerminalInput` decodes the sequences the terminal sends for clicks and, under Windows Terminal,
+  for the named keys
 - `blackjack.Tests`: xUnit tests, using a stacked shoe to rig hands; the side-bet house edges are
   checked by exact enumeration of a six-deck shoe, and each bot kind's by simulation
 
