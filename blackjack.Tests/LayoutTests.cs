@@ -34,9 +34,9 @@ namespace blackjack.Tests
 
         // Six bots around you (fewer on request), with 21+3 and Bust It on offer. The shoe is
         // stacked so that with six bots you hold a pair of 8s against a 6 and nobody has a natural.
-        private static Table NewTable(IAnsiConsole console, int bots = 6)
+        private static Table NewTable(IAnsiConsole console, int bots = 6, decimal chips = 100m)
         {
-            var human = new Player("Tester", 100m, new Stands());
+            var human = new Player("Tester", chips, new Stands());
             var seats = Enumerable.Range(1, bots).Select(i => new Player($"Bot {i}", 100m, new Stands())).ToList();
             seats.Insert(seats.Count / 2, human);
             var sideBets = new[] { SideBets.All[0], SideBets.All[1] };
@@ -164,7 +164,7 @@ namespace blackjack.Tests
 
             table.Screen.HandleToggle(Press(ConsoleKey.C));
             var hidden = Frame(console, table.Screen);
-            Assert.Contains("Hi-Lo hidden · C to show", hidden);
+            Assert.Contains("Hi-Lo hidden · C show count", hidden);
             Assert.DoesNotContain("running", hidden);
 
             // One column more and the panel is back beside your seat.
@@ -175,6 +175,12 @@ namespace blackjack.Tests
             Assert.Contains("─Hi-Lo", panel);
             Assert.DoesNotContain("Hi-Lo running", panel);
             Assert.Equal(RowOf(panel, "^╔═"), RowOf(panel, "─Hi-Lo"));
+
+            // Hidden, the panel says what the key does, like the bar.
+            beside.Screen.HandleToggle(Press(ConsoleKey.C));
+            var hiddenPanel = Frame(wider, beside.Screen);
+            Assert.Contains("C show count", hiddenPanel);
+            Assert.DoesNotContain("running", hiddenPanel);
         }
 
         [Theory]
@@ -190,6 +196,8 @@ namespace blackjack.Tests
             AssertFills(frame, width, height);
             Assert.Contains("Terminal too small", frame);
             Assert.Contains($"Blackjack needs 60×16, this is {width}×{height}", frame);
+            Assert.Contains("keys still work · X twice between hands cashes out", frame);
+            Assert.Equal(RowOf(frame, "Terminal too small") + 2, RowOf(frame, "keys still work"));
             Assert.DoesNotContain("BLACKJACK ", frame);
             Assert.DoesNotContain("DEALER", frame);
             Assert.DoesNotContain("┏", frame);
@@ -281,6 +289,160 @@ namespace blackjack.Tests
             }
         }
 
+        // The dealer's region, from its label to the row under the tiles.
+        private static string DealerRegion(string frame) =>
+            string.Join("\n", Lines(frame).Skip(RowOf(frame, "DEALER")).Take(RowOf(frame, "▼ YOU") - RowOf(frame, "DEALER")));
+
+        private static string YourPanel(string frame) =>
+            string.Join("\n", Lines(frame).Skip(RowOf(frame, "^[╭╔]")).Take(RowOf(frame, "^[╰╚]") - RowOf(frame, "^[╭╔]") + 1));
+
+        [Fact]
+        public void Shoe_AndChipStacks_ShowWithTheTiles()
+        {
+            var console = NewConsole(100, 30);
+            var table = NewTable(console, chips: 1300m);
+            DealToYourMove(table);
+
+            var move = Frame(console, table.Screen);
+            AssertFills(move, 100, 30);
+            var dealer = DealerRegion(move);
+            Assert.Contains("▓▓▓▓▓▓▓▓", dealer);
+            Assert.Contains("shoe 1 · 0.1 decks · cut", dealer); // the stacked shoe is 20 cards of a nominal 312
+            Assert.Contains("showing 6", dealer);
+
+            // Your 1270 chips after the bets: 500, 100, 25 and 5 stacks beside the figures, and the bet as a pile.
+            var panel = YourPanel(move);
+            Assert.Contains("(500) (100) ( 25) ( 5 )", panel);
+            Assert.Matches(@"\(500\).*\n.*▀▀▀▀▀ ▀▀▀▀▀ ▀▀▀▀▀ ▀▀▀▀▀", panel);
+            Assert.Contains("bet 10", panel);
+            Assert.Contains("chips 1270", panel);
+
+            // The Hi-Lo panel keeps its figures and has no shoe bar any more.
+            Assert.Matches(@"decks\s+0\.1 left", move);
+            Assert.DoesNotContain("│░", move);
+            Assert.DoesNotContain("%", move);
+
+            // Two hands: the stacks sit at the right of the panel.
+            table.Game.Split();
+            var split = Frame(console, table.Screen);
+            AssertFills(split, 100, 30);
+            Assert.Contains("HAND 1 OF 2", split);
+            Assert.Contains("(500) (100) ( 25) ( 5 ) ║", YourPanel(split));
+            Assert.Contains("▓▓▓▓▓▓▓▓", DealerRegion(split));
+        }
+
+        [Fact]
+        public void Shoe_ShowsAtEightyColumns_WhereTheChipsHaveNoRoom()
+        {
+            var console = NewConsole(80, 24);
+            var table = NewTable(console, chips: 1300m);
+            DealToYourMove(table);
+
+            var frame = Frame(console, table.Screen);
+            AssertFills(frame, 80, 24);
+            Assert.Contains("▓▓▓▓▓▓▓▓", DealerRegion(frame));
+            Assert.Contains("shoe 1 · 0.1 decks · cut", DealerRegion(frame));
+            Assert.Contains("6     ▒▒▒▒▒", frame); // the dealer's cards still in the middle
+            Assert.DoesNotContain("(500)", frame);
+            Assert.DoesNotContain("▀▀▀▀▀", frame);
+        }
+
+        [Theory]
+        [InlineData(70, 22)]
+        [InlineData(60, 16)]
+        public void Shoe_AndChipStacks_StayOff_NarrowAndShort(int width, int height)
+        {
+            var console = NewConsole(width, height);
+            var table = NewTable(console, chips: 1300m);
+            DealToYourMove(table);
+
+            var frame = Frame(console, table.Screen);
+            AssertFills(frame, width, height);
+            Assert.Contains("6♦ ▒▒  showing 6", frame);
+            Assert.DoesNotContain("▓", frame);
+            Assert.DoesNotContain("shoe 1 ▒", frame);
+            Assert.DoesNotContain("(500)", frame);
+            Assert.DoesNotContain("▀", frame);
+            Assert.DoesNotContain("decks · cut", frame);
+        }
+
+        [Fact]
+        public void Shoe_IsOneLine_BesideTheDealersChips()
+        {
+            var console = NewConsole(100, 20);
+            var table = NewTable(console, chips: 1300m);
+            DealToYourMove(table);
+
+            var frame = Frame(console, table.Screen);
+            AssertFills(frame, 100, 20);
+            var dealer = Lines(frame)[RowOf(frame, "DEALER")];
+            Assert.Contains("DEALER  6♦ ▒▒  showing 6", dealer);
+            Assert.EndsWith("shoe 1 ▒░░░░░░░░░ 0.1 decks · cut ", dealer);
+            Assert.DoesNotContain("▓", frame);
+            Assert.DoesNotContain("(500)", frame);
+
+            // At 80 columns the decks make way for the dealer's line, and the shoe keeps its place.
+            var narrow = NewConsole(80, 20);
+            var tight = NewTable(narrow, chips: 1300m);
+            DealToYourMove(tight);
+            var frame80 = Frame(narrow, tight.Screen);
+            AssertFills(frame80, 80, 20);
+            var dealer80 = Lines(frame80)[RowOf(frame80, "DEALER")];
+            Assert.Contains("DEALER  6♦ ▒▒  showing 6", dealer80);
+            Assert.EndsWith("shoe 1 ▒░░░░░░░░░ · cut ", dealer80);
+            Assert.DoesNotContain("decks · cut", dealer80);
+        }
+
+        [Fact]
+        public void Shoe_GetsShorter_AsTheCardsAreDealt()
+        {
+            var console = NewConsole(100, 30);
+            var human = new Player("Tester", 1000m, new Stands());
+            var seats = Enumerable.Range(1, 6).Select(i => new Player($"Bot {i}", 1000m, new Stands())).ToList();
+            seats.Insert(3, human);
+            var game = new Game(new Rules(), seats, new Shoe(6, 7));
+            var screen = new TableScreen(console, KeyBindings.Defaults(), new FastForward());
+            screen.Seat(game, human, new CardCounter(), new SessionStats(1000m), 7);
+
+            // A row of the stack is card backs, or the cut card at its height.
+            static int StackRows(string frame) =>
+                Lines(DealerRegion(frame)).Count(line => line.Contains("▓▓▓▓▓▓▓▓") || line.Contains("▀▀▀▀▀▀▀▀"));
+
+            var full = Frame(console, screen);
+            Assert.Equal(3, StackRows(full));
+            Assert.Equal(1, Lines(DealerRegion(full)).Count(line => line.Contains("▀▀▀▀▀▀▀▀")));
+            Assert.Contains("shoe 1 · 6.0 decks", full);
+            Assert.DoesNotContain("cut", DealerRegion(full));
+
+            // Rounds of everyone standing, until a third of the shoe is gone.
+            while (game.CardsRemaining > 200)
+            {
+                foreach (var seat in seats)
+                {
+                    game.PlaceBet(seat, 10m);
+                }
+
+                game.Deal();
+                while (game.Phase == Phase.Insurance)
+                {
+                    game.DeclineInsurance();
+                }
+
+                while (game.Phase == Phase.PlayerTurn)
+                {
+                    game.Stand();
+                }
+
+                game.NewRound();
+            }
+
+            var later = Frame(console, screen);
+            AssertFills(later, 100, 30);
+            Assert.Equal(1, game.ShoeNumber);
+            Assert.InRange(StackRows(later), 1, 2);
+            Assert.Equal(RowOf(full, "shoe 1 ·"), RowOf(later, "shoe 1 ·"));
+        }
+
         [Fact]
         public void EventLog_ShowsTheLastLinesThatFit_OneRowEach()
         {
@@ -337,6 +499,14 @@ namespace blackjack.Tests
         }
 
         [Fact]
+        public void TableLayout_ShowsTheShoeFromEightyColumns()
+        {
+            Assert.False(new TableLayout(79, 30, 7, 4).ShowShoe);
+            Assert.True(new TableLayout(80, 30, 7, 4).ShowShoe);
+            Assert.True(new TableLayout(80, 16, 7, 4).ShowShoe);
+        }
+
+        [Fact]
         public void TableLayout_KnowsWhenTheTerminalIsTooSmall()
         {
             Assert.True(new TableLayout(59, 16, 1, 3).TooSmall);
@@ -353,6 +523,14 @@ namespace blackjack.Tests
             Assert.Equal(new[] { "A    ", "  ♠  ", "    A" }, CardArt.Tile(C("As")).Select(Markup.Remove));
             Assert.Equal(5, CardArt.Back(5).Length);
             Assert.Equal(5, CardArt.Row(new[] { tile, CardArt.Back(5) }).Split('\n').Length);
+        }
+
+        [Fact]
+        public void LogChip_IsBoldTextInTheSuitColour_NotATile()
+        {
+            Assert.Equal("[bold red]10♥[/]", CardArt.LogChip(C("10h")));
+            Assert.Equal("[bold white]A♠[/]", CardArt.LogChip(C("As")));
+            Assert.Equal("[black on white]A♠[/]", CardArt.Chip(C("As")));
         }
 
         [Fact]

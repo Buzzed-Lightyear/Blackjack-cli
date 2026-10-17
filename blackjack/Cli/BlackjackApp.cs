@@ -17,9 +17,11 @@ namespace blackjack.Cli
         private readonly KeyBindings keys;
         private readonly string keysPath;
         private readonly IReadOnlyList<string> keyWarnings;
+        private readonly bool mouse;
         private readonly FastForward fastForward = new();
         private readonly HashSet<Hand> calledNaturals = new();
         private readonly HashSet<SideBetStake> announcedSideBets = new();
+        private readonly Dictionary<Player, decimal> lastBets = new();
         private bool shuffledAfterRound;
 
         // While a split is dealt: the index of the hand being split, and how many of the two
@@ -28,7 +30,8 @@ namespace blackjack.Cli
         private int splitDealt;
 
         // pause is how long a bot's move or a dealer's draw stays on screen; zero for tests. seed is
-        // offered in setup, and the shoes come out from firstShoe.
+        // offered in setup, and the shoes come out from firstShoe. mouse asks the terminal to report
+        // clicks while the table is up, where it can.
         public BlackjackApp(
             IAnsiConsole console,
             TimeSpan pause,
@@ -36,7 +39,8 @@ namespace blackjack.Cli
             int firstShoe = 1,
             KeyBindings? keys = null,
             string? keysPath = null,
-            IReadOnlyList<string>? keyWarnings = null)
+            IReadOnlyList<string>? keyWarnings = null,
+            bool mouse = true)
         {
             this.console = console;
             this.pause = pause;
@@ -45,6 +49,7 @@ namespace blackjack.Cli
             this.keys = keys ?? KeyBindings.Defaults();
             this.keysPath = keysPath ?? KeyBindings.ResolvePath(null);
             this.keyWarnings = keyWarnings ?? Array.Empty<string>();
+            this.mouse = mouse;
         }
 
         // Card, turn and end-of-hand pauses, scaled for normal play or the autopilot's speed.
@@ -95,16 +100,29 @@ namespace blackjack.Cli
             };
 
             console.Clear();
-            console.Live(screen.Build())
-                .AutoClear(false)
-                .Overflow(VerticalOverflow.Crop)
-                .Cropping(VerticalOverflowCropping.Top)
-                .Start(context =>
+            var reporting = mouse && MouseInput.Enable(console);
+            try
+            {
+                console.Live(screen.Build())
+                    .AutoClear(false)
+                    .Overflow(VerticalOverflow.Crop)
+                    .Cropping(VerticalOverflowCropping.Top)
+                    .Start(context =>
+                    {
+                        screen.Attach(context);
+                        PlayRounds(game, screen, human, seat, stats, counter);
+                        screen.Detach();
+                    });
+            }
+            finally
+            {
+                // The terminal keeps reporting the mouse until told to stop, so that is done even
+                // when the game throws.
+                if (reporting)
                 {
-                    screen.Attach(context);
-                    PlayRounds(game, screen, human, seat, stats, counter);
-                    screen.Detach();
-                });
+                    MouseInput.Disable(console);
+                }
+            }
 
             ShowSummary(human, bots, stats, settings, game);
         }
@@ -126,6 +144,12 @@ namespace blackjack.Cli
 
         private void PlayRounds(Game game, TableScreen screen, Player human, ConsoleStrategy seat, SessionStats stats, CardCounter counter)
         {
+            // What the side bets pay, in the log while the first bets are placed.
+            foreach (var bet in game.SideBets)
+            {
+                screen.Log(TableScreen.SideBetDescription(bet));
+            }
+
             while (true)
             {
                 foreach (var bot in game.Players.Where(p => p != human && p.Chips < game.Rules.MinimumBet).ToList())
@@ -142,6 +166,7 @@ namespace blackjack.Cli
                         "[grey]press any key for your summary[/]",
                         BarTone.Alert);
                     screen.ReadKey();
+                    Leave(screen, "[bold]Out of chips.[/]");
                     return;
                 }
 
@@ -156,6 +181,7 @@ namespace blackjack.Cli
                     }
                     else if (player == human)
                     {
+                        Leave(screen, $"[bold]Cashed out with {TableScreen.Money(human.Chips)} chips.[/]");
                         return;
                     }
                 }
@@ -172,6 +198,12 @@ namespace blackjack.Cli
                 foreach (var (player, amount) in bets)
                 {
                     game.PlaceBet(player, amount);
+                    if (player != human && (!lastBets.TryGetValue(player, out var last) || last != amount))
+                    {
+                        screen.Log(BotBet(player, amount, counter.TrueCount(game.DecksRemaining)));
+                    }
+
+                    lastBets[player] = amount;
                 }
 
                 foreach (var (bet, amount) in seat.SideBetStakes)
@@ -198,9 +230,18 @@ namespace blackjack.Cli
             }
         }
 
+        // The last frame stays on screen above the summary, so its bar states the outcome instead
+        // of the question that led to it.
+        private static void Leave(TableScreen screen, string outcome)
+        {
+            screen.SetBar(outcome, "", BarTone.Waiting);
+            screen.Refresh();
+        }
+
         // With an ace up, each seat answers in turn before the dealer peeks.
         private void OfferInsurance(Game game, TableScreen screen, Player human, CardCounter counter)
         {
+            var aceUp = game.DealerUpcard!.Rank == Rank.Ace;
             while (game.Phase == Phase.Insurance)
             {
                 var player = game.CurrentPlayer!;
@@ -223,8 +264,20 @@ namespace blackjack.Cli
                 }
             }
 
+            // The peek is what settles an ace; a dealer blackjack has already been called as the
+            // hole card turned over, so it is only repeated for a player whose insurance it pays.
+            if (aceUp && !game.DealerHand.IsNatural)
+            {
+                screen.Log("[grey]Dealer peeks: no blackjack.[/]");
+            }
+
             if (human.Insurance > 0m)
             {
+                if (game.DealerHand.IsNatural)
+                {
+                    screen.Log("Dealer peeks: blackjack.");
+                }
+
                 screen.Log(human.InsurancePayout > 0m
                     ? $"[bold green]Insurance pays {TableScreen.Money(human.InsurancePayout - human.Insurance)}.[/]"
                     : "[red]Insurance lost.[/]");
@@ -314,7 +367,7 @@ namespace blackjack.Cli
                     var tag = TableScreen.HandTag(player, hand);
                     if (hand.IsDoubled)
                     {
-                        var doubles = $"{Who(player, human)} {(player == human ? "double" : "doubles")} to {TableScreen.Money(hand.Bet)}";
+                        var doubles = $"{Who(player, human)} {(player == human ? "double" : "doubles")} the bet to {TableScreen.Money(hand.Bet)}";
                         screen.Log(hand.IsBust
                             ? $"{doubles}, {draws} {CardArt.LogChip(card)} and [red]{busts} with {hand.Value}[/]{tag}."
                             : $"{doubles} and {draws} {CardArt.LogChip(card)} for {hand.Value}{tag}.");
@@ -406,7 +459,7 @@ namespace blackjack.Cli
 
             if (fastForward.IsActive)
             {
-                stats.RecordAutopilot(hands.Count);
+                stats.RecordAutopilot(human);
             }
             else
             {
@@ -421,7 +474,7 @@ namespace blackjack.Cli
                 {
                     Outcome.Blackjack => $"[bold green]Blackjack pays! You win {net}.[/]",
                     Outcome.Win => $"[bold green]You win {net}.[/]",
-                    Outcome.Push => "[bold yellow]Push. Your bet comes back.[/]",
+                    Outcome.Push => "[bold]Push. Your bet comes back.[/]",
                     _ => $"[bold red]You lose {TableScreen.Money(hand.Bet)}.[/]"
                 });
             }
@@ -435,7 +488,7 @@ namespace blackjack.Cli
                     {
                         Outcome.Blackjack => $"[bold green]Hand {i + 1} wins {net} at {TableScreen.Money(game.Rules.BlackjackPayout)} to 1.[/]",
                         Outcome.Win => $"[bold green]Hand {i + 1} wins {net}.[/]",
-                        Outcome.Push => $"[bold yellow]Hand {i + 1} pushes.[/]",
+                        Outcome.Push => $"[bold]Hand {i + 1} pushes.[/]",
                         _ => $"[bold red]Hand {i + 1} loses {net}.[/]"
                     });
                 }
@@ -445,11 +498,17 @@ namespace blackjack.Cli
                 {
                     > 0m => $"[bold green]You win {TableScreen.Money(total)} over {hands.Count} hands.[/]",
                     < 0m => $"[bold red]You lose {TableScreen.Money(-total)} over {hands.Count} hands.[/]",
-                    _ => $"[bold yellow]You break even over {hands.Count} hands.[/]"
+                    _ => $"[bold]You break even over {hands.Count} hands.[/]"
                 });
             }
 
             AnnounceSideBets(screen, human);
+
+            // With more than the hands at stake, the round closes on one figure.
+            if (human.SideBets.Count > 0 || human.Insurance > 0m)
+            {
+                screen.Log($"[bold]Round net {TableScreen.SignedMoney(human.RoundNet)}.[/]");
+            }
         }
 
         // Side bets settle at the deal or after the dealer plays; each is announced once, when it has.
@@ -513,7 +572,8 @@ namespace blackjack.Cli
 
             if (stats.AutopilotHands > 0)
             {
-                table.AddRow("Hands on autopilot", stats.AutopilotHands.ToString());
+                table.AddRow("Hands on autopilot", stats.AutopilotHands.ToString())
+                    .AddRow("Autopilot net", TableScreen.SignedMoney(stats.AutopilotNet));
             }
 
             if (stats.SideBetsPlaced > 0)
@@ -524,7 +584,7 @@ namespace blackjack.Cli
 
             table.AddRow("Started with", TableScreen.Money(stats.StartingChips))
                 .AddRow("Leaving with", TableScreen.Money(human.Chips))
-                .AddRow("Net", TableScreen.SignedMoney(human.Chips - stats.StartingChips));
+                .AddRow("[bold]Net[/]", $"[bold]{TableScreen.SignedMoney(human.Chips - stats.StartingChips)}[/]");
 
             // Every bot that sat down, against the stack it started with; a bot that went broke and
             // left the table is still listed.
@@ -548,6 +608,13 @@ namespace blackjack.Cli
         }
 
         private static string Who(Player player, Player human) => player == human ? "You" : TableScreen.Name(player);
+
+        // "Bot 1 bets 40." or, for a counter, "Bot 1 bets 40 at true +3."
+        private static string BotBet(Player bot, decimal amount, decimal trueCount)
+        {
+            var count = Bots.TypeOf(bot.Strategy) == BotType.Counter ? $" at true {trueCount:+0.#;-0.#;0}" : "";
+            return $"{TableScreen.Name(bot)} bets {TableScreen.Money(amount)}{count}.";
+        }
 
         private TimeSpan Paced(double play, double slow, double normal, double fast, double max)
         {
