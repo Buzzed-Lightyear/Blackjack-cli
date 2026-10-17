@@ -24,6 +24,7 @@ namespace blackjack.Cli
         public int SideBetsWon { get; private set; }
         public decimal SideBetNet { get; private set; }
         public int AutopilotHands { get; private set; }
+        public decimal AutopilotNet { get; private set; }
         public int Decisions { get; private set; }
         public int BookDecisions { get; private set; }
 
@@ -67,7 +68,12 @@ namespace blackjack.Cli
             SideBetNet += player.SideBetNet;
         }
 
-        public void RecordAutopilot(int hands) => AutopilotHands += hands;
+        // A settled round the book played: its hands, and what they won or lost.
+        public void RecordAutopilot(Player player)
+        {
+            AutopilotHands += player.Hands.Count;
+            AutopilotNet += player.RoundNet;
+        }
 
         public void RecordDecision(bool followedBook)
         {

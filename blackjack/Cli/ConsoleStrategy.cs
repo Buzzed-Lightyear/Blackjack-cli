@@ -2,6 +2,7 @@ using blackjack.Domain;
 using blackjack.Engine;
 using blackjack.Engine.SideBets;
 using blackjack.Strategies;
+using Spectre.Console;
 
 namespace blackjack.Cli
 {
@@ -19,6 +20,7 @@ namespace blackjack.Cli
         private readonly IReadOnlyList<ISideBet> sideBets;
         private readonly BasicStrategyBot book;
         private readonly long[] sideStakes;
+        private readonly HashSet<int> explainedSideBets = new();
         private long bet;
 
         public ConsoleStrategy(
@@ -63,18 +65,29 @@ namespace blackjack.Cli
             bet = Math.Clamp(bet == 0 ? min : bet, min, max);
             var typed = "";
             var cashingOut = false;
+            var playingOut = false;
             try
             {
                 while (true)
                 {
+                    // A typed amount outside the table's limits is shown in the bar with what is
+                    // wrong, but the seat keeps the last valid bet until it is fixed.
                     var shown = typed.Length > 0 && long.TryParse(typed, out var value) ? value : bet;
-                    ClampSideStakes(shown >= min && shown <= max ? shown : bet, max);
-                    screen.PendingBet = shown;
+                    var pending = shown >= min && shown <= max ? shown : bet;
+                    ClampSideStakes(pending, max);
+                    screen.PendingBet = pending;
                     screen.PendingSideBets = sideStakes;
                     if (cashingOut)
                     {
                         screen.SetBar(
                             $"[bold red]Cash out with {TableScreen.Money(chips)} chips?[/]  {screen.Key(KeyAction.CashOut)} again to confirm",
+                            "[grey]any other key keeps you at the table[/]",
+                            BarTone.Alert);
+                    }
+                    else if (playingOut)
+                    {
+                        screen.SetBar(
+                            $"[bold red]Play out the shoe on autopilot at the minimum?[/]  {screen.Key(KeyAction.NextShoe)} again to confirm",
                             "[grey]any other key keeps you at the table[/]",
                             BarTone.Alert);
                     }
@@ -92,6 +105,18 @@ namespace blackjack.Cli
                         }
 
                         cashingOut = false;
+                        continue;
+                    }
+
+                    if (playingOut)
+                    {
+                        if (keys.Is(KeyAction.NextShoe, key))
+                        {
+                            fastForward.SkipShoe();
+                            return book.DecideBet(chips, table);
+                        }
+
+                        playingOut = false;
                         continue;
                     }
 
@@ -127,7 +152,7 @@ namespace blackjack.Cli
                     }
                     else if (SideBetPressed(key) is { } side)
                     {
-                        AddSideStake(side, min, shown >= min && shown <= max ? shown : bet, max);
+                        AddSideStake(side, min, pending, max);
                     }
                     else if (key.Key == ConsoleKey.Enter || keys.Is(KeyAction.Deal, key))
                     {
@@ -152,8 +177,7 @@ namespace blackjack.Cli
                     }
                     else if (keys.Is(KeyAction.NextShoe, key))
                     {
-                        fastForward.SkipShoe();
-                        return book.DecideBet(chips, table);
+                        playingOut = true;
                     }
                     else if (keys.Is(KeyAction.CashOut, key))
                     {
@@ -264,13 +288,18 @@ namespace blackjack.Cli
 
         // A side bet can't be more than the main bet, nor more than the chips left once the main
         // bet and the other side bet are down. Each press adds the minimum; past the cap the stake
-        // wraps round to nothing.
+        // wraps round to nothing. The first stake on a bet in the session logs what it pays.
         private void AddSideStake(int index, long min, long mainBet, long max)
         {
             var others = sideStakes.Where((_, i) => i != index).Sum();
             var cap = Math.Max(0, Math.Min(mainBet, max - mainBet - others));
             var next = sideStakes[index] + min;
             sideStakes[index] = next > cap ? 0 : next;
+            if (sideStakes[index] > 0 && explainedSideBets.Add(index))
+            {
+                var bet = sideBets[index];
+                screen.Log($"[grey]{Markup.Escape(bet.Name)} pays {Markup.Escape(bet.Description)}.[/]");
+            }
         }
 
         // When the main bet or the chips change, the first side bet keeps what still fits and the
@@ -285,18 +314,21 @@ namespace blackjack.Cli
             }
         }
 
+        // The deal key comes right after the amount, so it is the last hint a narrow terminal
+        // cuts; a typed amount the table won't take shows the problem in its place.
         private string BetLine(string typed, long min, long max)
         {
             var title = "[bold yellow]PLACE YOUR BET[/]";
+            var deal = $"{screen.Key(KeyAction.Deal)} deal";
             if (typed.Length == 0)
             {
-                return $"{title}  [bold]◀ {bet} ▶[/]  {screen.Key(KeyAction.BetDown)}/{screen.Key(KeyAction.BetUp)} -/+{min} or type it"
-                    + $"{SideBetKeyHint()} · {screen.Key(KeyAction.Deal)} deal";
+                return $"{title}  [bold]◀ {bet} ▶[/]  {deal} · {screen.Key(KeyAction.BetDown)}/{screen.Key(KeyAction.BetUp)} -/+{min} or type it"
+                    + SideBetKeyHint();
             }
 
             var value = long.Parse(typed);
-            var problem = value < min ? $"  [red]the minimum is {min}[/]" : value > max ? $"  [red]you have {max}[/]" : "";
-            return $"{title}  [bold]{typed}_[/]{problem}  [grey]Backspace · Esc[/] · {screen.Key(KeyAction.Deal)} deal";
+            var next = value < min ? $"[red]the minimum is {min}[/]" : value > max ? $"[red]you have {max}[/]" : deal;
+            return $"{title}  [bold]{typed}_[/]  {next} · [grey]Backspace · Esc[/]";
         }
 
         private string SideBetKeyHint() => sideStakes.Length switch
@@ -307,7 +339,7 @@ namespace blackjack.Cli
         };
 
         private string BetCommands() =>
-            $"[grey]{screen.Key(KeyAction.FastForward)} autopilot · {screen.Key(KeyAction.NextShoe)} next shoe · "
+            $"[grey]{screen.Key(KeyAction.FastForward)} autopilot · {screen.Key(KeyAction.NextShoe)} play out shoe · "
             + $"{screen.Key(KeyAction.CashOut)} cash out ·[/] {screen.Toggles()}";
 
         private string InsuranceLine(Hand hand)
