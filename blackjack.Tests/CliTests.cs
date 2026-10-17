@@ -134,17 +134,98 @@ namespace blackjack.Tests
         private static int FirstSeedWhere(int bots, Func<FirstRound, bool> wanted, params Move[] moves) =>
             FirstSeedWhere(new Rules(), bots, wanted, moves);
 
-        private static int FirstSeedWhere(Rules rules, int bots, Func<FirstRound, bool> wanted, params Move[] moves)
+        private static int FirstSeedWhere(Rules rules, int bots, Func<FirstRound, bool> wanted, params Move[] moves) =>
+            SeedWhere(seed => wanted(PlayFirstRound(rules, seed, bots, moves)));
+
+        private static int SeedWhere(Func<int, bool> wanted)
         {
             for (var seed = 1; seed < 10_000; seed++)
             {
-                if (wanted(PlayFirstRound(rules, seed, bots, moves)))
+                if (wanted(seed))
                 {
                     return seed;
                 }
             }
 
             throw new InvalidOperationException("No seed deals that round.");
+        }
+
+        // One round you stood through: whether it gave you a plain move (no insurance, no natural
+        // on either side), and what each bot staked and came away with.
+        private sealed record StoodRound(bool NeedsAMove, IReadOnlyList<decimal> BotBets, IReadOnlyList<decimal> BotNets);
+
+        // Plays rounds from this seed the way BlackjackApp seats and deals them, with you standing
+        // on everything and each bot built from its type with the Random the app would give it,
+        // deciding on the live count as it does there.
+        private static List<StoodRound> PlayStoodRounds(int seed, string types, int rounds)
+        {
+            var rules = new Rules();
+            var human = new Player("P", 1000m, new Scripted());
+            var seats = types.Split(',', StringSplitOptions.TrimEntries)
+                .Select((name, i) => new Player($"Bot {i + 1}", 1000m, Bots.Create(Bots.Parse(name), rules, Bots.RandomFor(seed, i + 1))))
+                .ToList();
+            var bots = seats.ToList();
+            seats.Insert(seats.Count / 2, human);
+
+            var game = new Game(rules, seats, new Shoe(rules.DeckCount, seed, rules.Penetration));
+            var counter = new CardCounter();
+            game.CardRevealed += counter.OnCardRevealed;
+            game.Shuffled += counter.Reset;
+            TableContext Table() => new(rules, counter.RunningCount, counter.TrueCount(game.DecksRemaining), game.DecksRemaining);
+
+            var played = new List<StoodRound>();
+            for (var round = 0; round < rounds; round++)
+            {
+                if (game.Phase == Phase.Settled)
+                {
+                    game.NewRound();
+                }
+
+                var bets = bots.Select(bot => bot.Strategy.DecideBet(bot.Chips, Table())).ToList();
+                foreach (var seat in seats)
+                {
+                    game.PlaceBet(seat, seat == human ? rules.MinimumBet : bets[bots.IndexOf(seat)]);
+                }
+
+                game.Deal();
+                var insuranceOffered = game.Phase == Phase.Insurance;
+                while (game.Phase == Phase.Insurance)
+                {
+                    if (game.CurrentPlayer!.Strategy.DecideInsurance(game.CurrentPlayer.Hands[0], Table()))
+                    {
+                        game.TakeInsurance();
+                    }
+                    else
+                    {
+                        game.DeclineInsurance();
+                    }
+                }
+
+                while (game.Phase == Phase.PlayerTurn)
+                {
+                    var options = new MoveOptions(game.CanDouble, game.CanSplit, game.CanHit);
+                    switch (game.CurrentPlayer!.Strategy.DecideMove(game.CurrentHand!, game.DealerUpcard!, options, Table()))
+                    {
+                        case Move.Hit:
+                            game.Hit();
+                            break;
+                        case Move.Double:
+                            game.Double();
+                            break;
+                        case Move.Split:
+                            game.Split();
+                            break;
+                        default:
+                            game.Stand();
+                            break;
+                    }
+                }
+
+                var needsAMove = !insuranceOffered && !human.Hands[0].IsNatural && !game.DealerHand.IsNatural;
+                played.Add(new StoodRound(needsAMove, bets, bots.Select(bot => bot.RoundNet).ToList()));
+            }
+
+            return played;
         }
 
         // The player gets a decision and no insurance question: no natural on either side, no ace up.
@@ -1227,6 +1308,66 @@ namespace blackjack.Tests
             Assert.Contains("Bot 1 is out of chips and leaves the table.", output);
             Assert.Matches(@"Bot 1 \(basic\)\s+│\s+-10", output);
             Assert.Matches(@"\bNet\s+│\s+\+10", output);
+        }
+
+        [Fact]
+        public void App_LogsABotsBet_WhenItDiffersFromItsLast()
+        {
+            // Two rounds you stand through, with a gambler who loses the first and so doubles its
+            // stake for the second, beside a counter whose stake stays at the minimum.
+            var seed = SeedWhere(seed =>
+            {
+                var rounds = PlayStoodRounds(seed, "gambler, counter", 2);
+                return rounds.All(r => r.NeedsAMove)
+                    && rounds[0].BotNets[0] < 0m
+                    && rounds[1].BotBets[0] == 20m
+                    && rounds[1].BotBets[1] == 10m;
+            });
+            var console = NewConsole();
+            PushSetup(console, bots: "2", types: "gambler, counter");
+            console.Input.PushKey(ConsoleKey.Spacebar);
+            console.Input.PushKey(ConsoleKey.S);
+            console.Input.PushKey(ConsoleKey.Spacebar);
+            console.Input.PushKey(ConsoleKey.S);
+            PushCashOut(console);
+
+            new BlackjackApp(console, TimeSpan.Zero, seed).Run();
+
+            // The first round announces every stake; the second only the gambler's new one, and
+            // the seats carry the stakes until the next deal.
+            var output = console.Output;
+            AssertInOrder(output, @"Bot 1 bets 10\.", @"Bot 2 bets 10 at true 0\.", @"Bot 1 bets 20\.");
+            var dealt = output.Split(FrameStart).First(frame => frame.Contains("round 2"));
+            Assert.Contains("Bot 1 bets 20.", dealt);
+            Assert.DoesNotContain("Bot 2 bets", dealt);
+            var frame = LastFrame(output);
+            Assert.Contains("gambler · 20", frame);
+            Assert.Contains("count · 10", frame);
+        }
+
+        [Fact]
+        public void TableScreen_ShowsABotsStakeAfterItsTag()
+        {
+            var console = NewConsole();
+            var rules = new Rules();
+            var human = new Player("Tester", 100m, new BasicStrategyBot());
+            var counter = new Player("Bot 1", 100m, new CounterBot(rules));
+            var gambler = new Player("Bot 2", 100m, new GamblerBot(rules, new Random(1)));
+            var game = new Game(rules, new[] { counter, human, gambler }, new Shoe(6, 1));
+            var screen = new TableScreen(console, KeyBindings.Defaults(), new FastForward());
+            screen.Seat(game, human, new CardCounter(), new SessionStats(100m), 1);
+
+            screen.Refresh();
+            Assert.Matches(@"(?m)^count\s+gambler\s*$", console.Output);
+
+            game.PlaceBet(counter, 40m);
+            game.PlaceBet(human, 10m);
+            game.PlaceBet(gambler, 10m);
+            var start = console.Output.Length;
+            screen.Refresh();
+
+            // The stakes sit after the tags; your own row stays bare.
+            Assert.Matches(@"(?m)^count · 40\s+gambler · 10\s*$", console.Output[start..]);
         }
 
         [Fact]

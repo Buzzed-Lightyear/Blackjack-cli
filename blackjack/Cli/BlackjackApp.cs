@@ -20,6 +20,7 @@ namespace blackjack.Cli
         private readonly FastForward fastForward = new();
         private readonly HashSet<Hand> calledNaturals = new();
         private readonly HashSet<SideBetStake> announcedSideBets = new();
+        private readonly Dictionary<Player, decimal> lastBets = new();
         private bool shuffledAfterRound;
 
         // While a split is dealt: the index of the hand being split, and how many of the two
@@ -172,6 +173,12 @@ namespace blackjack.Cli
                 foreach (var (player, amount) in bets)
                 {
                     game.PlaceBet(player, amount);
+                    if (player != human && (!lastBets.TryGetValue(player, out var last) || last != amount))
+                    {
+                        screen.Log(BotBet(player, amount, counter.TrueCount(game.DecksRemaining)));
+                    }
+
+                    lastBets[player] = amount;
                 }
 
                 foreach (var (bet, amount) in seat.SideBetStakes)
@@ -549,6 +556,13 @@ namespace blackjack.Cli
         }
 
         private static string Who(Player player, Player human) => player == human ? "You" : TableScreen.Name(player);
+
+        // "Bot 1 bets 40." or, for a counter, "Bot 1 bets 40 at true +3."
+        private static string BotBet(Player bot, decimal amount, decimal trueCount)
+        {
+            var count = Bots.TypeOf(bot.Strategy) == BotType.Counter ? $" at true {trueCount:+0.#;-0.#;0}" : "";
+            return $"{TableScreen.Name(bot)} bets {TableScreen.Money(amount)}{count}.";
+        }
 
         private TimeSpan Paced(double play, double slow, double normal, double fast, double max)
         {

@@ -397,9 +397,17 @@ namespace blackjack.Cli
             return done ? $"[grey]{Name(seat)}[/]" : $"[bold]{Name(seat)}[/]";
         }
 
-        // A bot's type under its name; nothing under yours.
-        private string SeatTag(Player seat) =>
-            seat != human && Bots.TypeOf(seat.Strategy) is { } type ? $"[grey]{Bots.Tag(type)}[/]" : "";
+        // A bot's type under its name, with its stake while it has one; nothing under yours.
+        private string SeatTag(Player seat)
+        {
+            if (seat == human || Bots.TypeOf(seat.Strategy) is not { } type)
+            {
+                return "";
+            }
+
+            var stake = seat.Hands.Sum(h => h.Bet);
+            return stake > 0m ? $"[grey]{Bots.Tag(type)} · {Money(stake)}[/]" : $"[grey]{Bots.Tag(type)}[/]";
+        }
 
         // The tag row is the one the layout drops when the terminal has no row for it.
         private IEnumerable<Func<Player, string>> SeatRowsFor(TableLayout layout) =>

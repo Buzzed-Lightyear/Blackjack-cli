@@ -32,9 +32,10 @@ The table fills the terminal. The header shows the round and the rules on the le
 in play, its seed and your chips on the right; as the terminal narrows the payout and minimum make
 way for them, then the rest of the rules. The dealer is under it, with one-line chips on fewer
 than 23 rows, three-line card tiles from 23 rows and five-line tiles from 36. Below are the other
-seats in the order they act, each bot's kind in grey under its name (the tag row goes when the
-terminal is only 16 rows), with a `▼ YOU` marker where you sit; under 90 columns a table with more
-than three bots wraps onto two rows of seats, when the height leaves a line for the log. Your seat
+seats in the order they act, each bot's kind in grey under its name with its stake beside it while
+it has a bet down, `count · 40` (the tag row goes when the terminal is only 16 rows), with a
+`▼ YOU` marker where you sit; under 90 columns a table with more than three bots wraps onto two
+rows of seats, when the height leaves a line for the log. Your seat
 is the panel at the bottom, taller with the tiles, with the Hi-Lo count in a panel beside it or,
 under 70 columns, on one line below it (`Hi-Lo running +3 · true +1.2 · 4.5 decks`). Then come
 the latest events, as many as there are rows left, then a bar that always says what the keys do
@@ -150,9 +151,11 @@ With at least one bot at the table, setup asks "Bot types?". Answer with one kin
 The default is `basic`. The mix and the gambler's hunches are drawn from the session seed, so the
 same seed seats the same bots and they make the same choices.
 
-Each bot's tag shows in grey under its name on the table. The cash-out summary adds a row per bot,
-such as `Bot 1 (counter)`, with its net against the chips it started with; a bot that went broke and
-left the table is still listed.
+Each bot's tag shows in grey under its name on the table, with its stake after it (`gambler · 40`)
+from the moment it bets until the next deal, and the log notes a bet that differs from the bot's
+last one: `Bot 1 bets 40.`, or `Bot 1 bets 40 at true +3.` for a counter. The cash-out summary
+adds a row per bot, such as `Bot 1 (counter)`, with its net against the chips it started with; a
+bot that went broke and left the table is still listed.
 
 ## Replaying a session
 
