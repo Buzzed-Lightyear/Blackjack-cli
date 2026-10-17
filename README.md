@@ -119,11 +119,14 @@ There is no surrender.
 ### Side bets
 
 The table offers two side bets, 21+3 and Bust It by default; the setup can swap in any two of the
-six below. While betting, `T` and `G` add the table minimum to the first and second side bet, and
-wrap back to nothing once the stake would pass its cap: a side bet can be at most the main bet, as
-far as your chips stretch after the main bet. The stakes show in your seat with their keys, are
-remembered between hands like the main bet, and are trimmed when a smaller main bet or stack no
-longer covers them. The bots never stake them.
+six below. Setup prints each offered bet's pay table on a grey line as it asks about them, and the
+whole catalogue when you change them; the log shows the two offered tables again while the first
+bets are placed, and a bet's table the first time you stake it in a session (`21+3 pays suited
+trips 100, straight flush 40, ...`). While betting, `T` and `G` add the table minimum to the first
+and second side bet, and wrap back to nothing once the stake would pass its cap: a side bet can be
+at most the main bet, as far as your chips stretch after the main bet. The stakes show in your seat
+with their keys, are remembered between hands like the main bet, and are trimmed when a smaller
+main bet or stack no longer covers them. The bots never stake them.
 
 Odds are "to 1": a win returns the stake plus the stake times the odds. House edges are for six
 decks; Bust It depends on the soft-17 rule.

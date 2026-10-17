@@ -70,6 +70,10 @@ namespace blackjack.Cli
 
         public static string Name(Player player) => Markup.Escape(player.Name);
 
+        // A side bet's pay table on one grey line: "21+3: suited trips 100, straight flush 40, ...".
+        public static string SideBetDescription(ISideBet bet) =>
+            $"[grey]{Markup.Escape(bet.Name)}: {Markup.Escape(bet.Description)}[/]";
+
         // The brief form leaves out the payout and the minimum, for a header with no room for them.
         public static string DescribeRules(Rules rules, bool brief = false)
         {

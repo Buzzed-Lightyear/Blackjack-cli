@@ -127,6 +127,12 @@ namespace blackjack.Cli
 
         private void PlayRounds(Game game, TableScreen screen, Player human, ConsoleStrategy seat, SessionStats stats, CardCounter counter)
         {
+            // What the side bets pay, in the log while the first bets are placed.
+            foreach (var bet in game.SideBets)
+            {
+                screen.Log(TableScreen.SideBetDescription(bet));
+            }
+
             while (true)
             {
                 foreach (var bot in game.Players.Where(p => p != human && p.Chips < game.Rules.MinimumBet).ToList())

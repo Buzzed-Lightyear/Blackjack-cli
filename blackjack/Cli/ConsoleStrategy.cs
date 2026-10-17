@@ -2,6 +2,7 @@ using blackjack.Domain;
 using blackjack.Engine;
 using blackjack.Engine.SideBets;
 using blackjack.Strategies;
+using Spectre.Console;
 
 namespace blackjack.Cli
 {
@@ -19,6 +20,7 @@ namespace blackjack.Cli
         private readonly IReadOnlyList<ISideBet> sideBets;
         private readonly BasicStrategyBot book;
         private readonly long[] sideStakes;
+        private readonly HashSet<int> explainedSideBets = new();
         private long bet;
 
         public ConsoleStrategy(
@@ -286,13 +288,18 @@ namespace blackjack.Cli
 
         // A side bet can't be more than the main bet, nor more than the chips left once the main
         // bet and the other side bet are down. Each press adds the minimum; past the cap the stake
-        // wraps round to nothing.
+        // wraps round to nothing. The first stake on a bet in the session logs what it pays.
         private void AddSideStake(int index, long min, long mainBet, long max)
         {
             var others = sideStakes.Where((_, i) => i != index).Sum();
             var cap = Math.Max(0, Math.Min(mainBet, max - mainBet - others));
             var next = sideStakes[index] + min;
             sideStakes[index] = next > cap ? 0 : next;
+            if (sideStakes[index] > 0 && explainedSideBets.Add(index))
+            {
+                var bet = sideBets[index];
+                screen.Log($"[grey]{Markup.Escape(bet.Name)} pays {Markup.Escape(bet.Description)}.[/]");
+            }
         }
 
         // When the main bet or the chips change, the first side bet keeps what still fits and the

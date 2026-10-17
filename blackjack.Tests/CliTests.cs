@@ -554,6 +554,15 @@ namespace blackjack.Tests
             var output = console.Output;
             Assert.Contains("T 21+3 10", output);
             Assert.Contains("G Bust It 10", output);
+
+            // The first betting frame lists what the offered bets pay; the first stake on each
+            // says it again as a sentence.
+            var first = output.Split(FrameStart)[1];
+            AssertInOrder(first, @"21\+3: suited trips 100, straight flush 40, trips 30, straight 10, flush 5", "Bust It: dealer busts with 3-4 cards 2");
+            AssertInOrder(
+                output,
+                @"21\+3 pays suited trips 100, straight flush 40, trips 30, straight 10, flush 5\.",
+                @"Bust It pays dealer busts with 3-4 cards 2, 5 cards 4, 6 cards 12, 7 cards 50, 8\+ cards 250\.");
             Assert.Matches(@"21\+3( loses \(no hand\)|: [a-z ]+, \+\d+)\.", output);
             Assert.Matches(@"Bust It( loses \((no bust|dealer blackjack)\)|: \d-card bust, \+\d+)\.", output);
             Assert.Matches(@"Round net [+\-±]\d+\.", output);
@@ -1052,6 +1061,11 @@ namespace blackjack.Tests
 
             Assert.Equal(20m, strategy.DecideBet(35m, Tables.Fresh()));
             Assert.Equal(new[] { (sideBets[0], 15m) }, strategy.SideBetStakes);
+
+            // Each bet's pay table was logged once, on the first stake, however often it changed.
+            var log = LastFrame(console.Output);
+            Assert.Single(Regex.Matches(log, @"21\+3 pays suited trips 100"));
+            Assert.Single(Regex.Matches(log, "Bust It pays dealer busts"));
         }
 
         [Fact]
@@ -1251,6 +1265,20 @@ namespace blackjack.Tests
             Assert.Contains("Change the side bets? (21+3 and Bust It)", console.Output);
             Assert.Contains("Pick a bet that differs from the first.", console.Output);
             Assert.Equal(new[] { "Lucky Ladies", "Royal Match" }, settings.SideBets.Select(b => b.Name));
+
+            // The offered pay tables come with the question, the whole catalogue with the choice,
+            // and the two chosen with the answer.
+            AssertInOrder(
+                console.Output,
+                @"21\+3: suited trips 100, straight flush 40, trips 30, straight 10, flush 5",
+                @"Bust It: dealer busts with 3-4 cards 2, 5 cards 4, 6 cards 12, 7 cards 50, 8\+ cards 250",
+                @"Change the side bets\?",
+                "Perfect Pairs: perfect pair 25, coloured pair 12, mixed pair 6",
+                "Lucky Lucky: suited 7-7-7 200",
+                @"First side bet\?",
+                @"Second side bet\?",
+                "Lucky Ladies: Q♥Q♥ with a dealer blackjack 1000, Q♥Q♥ 125, matched 20 19, suited 20 9, any 20 4",
+                "Royal Match: suited king and queen 25, any two suited cards 5 to 2");
         }
 
         [Fact]
